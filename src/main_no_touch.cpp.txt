@@ -1,0 +1,250 @@
+// Poker Timer - TEST VERSION WITHOUT TOUCH
+// Use this to verify display works without touch interference
+// Rename to main.cpp to test
+
+#include <Arduino.h>
+#include <TFT_eSPI.h>
+#include <WiFi.h>
+#include <ESPAsyncWebServer.h>
+#include <Preferences.h>
+#include <nvs_flash.h>
+
+// Display setup
+TFT_eSPI tft = TFT_eSPI();
+
+// Display dimensions: 240x320
+const int SCREEN_WIDTH = 240;
+const int SCREEN_HEIGHT = 320;
+
+// Backlight control
+#define TFT_BL 21
+
+// Preferences for storing configuration
+Preferences preferences;
+bool nvsAvailable = false;
+
+// Round structure
+struct Round {
+  int duration;
+  int smallBlind;
+  int bigBlind;
+  int ante;
+  bool isBreak;
+};
+
+// Tournament settings
+#define MAX_ROUNDS 25
+Round rounds[MAX_ROUNDS];
+int totalRounds = MAX_ROUNDS;
+int currentRound = 0;
+bool timerRunning = false;
+unsigned long roundStartTime = 0;
+int remainingSeconds = 0;
+int startingSeconds = 0;
+
+void initializeDefaultRounds() {
+  int blinds[] = {25, 50, 75, 100, 150, 200, 300, 400, 500, 600, 
+                  800, 1000, 1500, 2000, 3000, 4000, 5000, 6000, 
+                  8000, 10000, 12000, 15000, 20000, 25000, 30000};
+  
+  int roundIndex = 0;
+  for (int i = 0; i < MAX_ROUNDS; i++) {
+    if ((i + 1) % 4 == 0 && i > 0) {
+      rounds[i].isBreak = true;
+      rounds[i].duration = 15;
+      rounds[i].smallBlind = 0;
+      rounds[i].bigBlind = 0;
+      rounds[i].ante = 0;
+    } else {
+      rounds[i].isBreak = false;
+      rounds[i].duration = 15;
+      rounds[i].smallBlind = blinds[roundIndex];
+      rounds[i].bigBlind = blinds[roundIndex] * 2;
+      rounds[i].ante = 0;
+      roundIndex++;
+      if (roundIndex >= 25) roundIndex = 24;
+    }
+  }
+}
+
+void drawTimerDisplay() {
+  tft.fillScreen(TFT_BLACK);
+  
+  // Display round info
+  tft.setTextSize(2);
+  tft.setTextColor(TFT_YELLOW);
+  tft.setCursor(10, 10);
+  
+  if (rounds[currentRound].isBreak) {
+    tft.println("BREAK");
+  } else {
+    tft.print("Round ");
+    tft.println(currentRound + 1);
+  }
+  
+  // Draw separator line
+  tft.drawFastHLine(0, 40, SCREEN_WIDTH, TFT_WHITE);
+  
+  if (!rounds[currentRound].isBreak) {
+    // Display blinds
+    tft.setTextSize(2);
+    tft.setTextColor(TFT_CYAN);
+    tft.setCursor(10, 50);
+    tft.println("Blinds:");
+    
+    tft.setTextSize(3);
+    tft.setTextColor(TFT_WHITE);
+    tft.setCursor(10, 80);
+    tft.print(rounds[currentRound].smallBlind);
+    tft.print("/");
+    tft.println(rounds[currentRound].bigBlind);
+    
+    if (rounds[currentRound].ante > 0) {
+      tft.setTextSize(2);
+      tft.setTextColor(TFT_CYAN);
+      tft.setCursor(10, 120);
+      tft.print("Ante: ");
+      tft.setTextColor(TFT_WHITE);
+      tft.println(rounds[currentRound].ante);
+    }
+  } else {
+    tft.setTextSize(3);
+    tft.setTextColor(TFT_GREEN);
+    tft.setCursor(50, 80);
+    tft.println("BREAK");
+  }
+  
+  // Draw time remaining (large)
+  int minutes = remainingSeconds / 60;
+  int seconds = remainingSeconds % 60;
+  
+  tft.setTextSize(5);
+  tft.setTextColor(TFT_WHITE);
+  tft.setCursor(30, 150);
+  if (minutes < 10) tft.print("0");
+  tft.print(minutes);
+  tft.print(":");
+  if (seconds < 10) tft.print("0");
+  tft.println(seconds);
+  
+  // Status indicator
+  tft.setTextSize(2);
+  if (timerRunning) {
+    tft.setTextColor(TFT_GREEN);
+    tft.setCursor(60, 215);
+    tft.println("RUNNING");
+  } else {
+    tft.setTextColor(TFT_RED);
+    tft.setCursor(70, 215);
+    tft.println("PAUSED");
+  }
+  
+  // Instructions (no touch buttons)
+  tft.setTextSize(1);
+  tft.setTextColor(TFT_YELLOW);
+  tft.setCursor(10, 270);
+  tft.println("NO TOUCH - DISPLAY TEST");
+  tft.setCursor(10, 285);
+  tft.println("Timer will auto-run");
+}
+
+void setup() {
+  Serial.begin(115200);
+  delay(1000);
+  
+  Serial.println("\n\n========================================");
+  Serial.println("   POKER TIMER - NO TOUCH TEST");
+  Serial.println("========================================\n");
+  
+  // Initialize NVS
+  esp_err_t err = nvs_flash_init();
+  if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+    ESP_ERROR_CHECK(nvs_flash_erase());
+    err = nvs_flash_init();
+  }
+  nvsAvailable = (err == ESP_OK);
+  
+  // Initialize display
+  Serial.println("Initializing display...");
+  pinMode(TFT_BL, OUTPUT);
+  digitalWrite(TFT_BL, HIGH);
+  
+  tft.init();
+  tft.setRotation(0);
+  tft.fillScreen(TFT_BLACK);
+  
+  // Test display
+  tft.fillRect(10, 10, 100, 100, TFT_GREEN);
+  Serial.println("✓ Green test square displayed");
+  delay(1000);
+  
+  tft.fillScreen(TFT_BLACK);
+  tft.setTextSize(2);
+  tft.setTextColor(TFT_WHITE);
+  tft.setCursor(30, 120);
+  tft.println("Display OK!");
+  tft.setTextSize(1);
+  tft.setCursor(40, 150);
+  tft.println("Starting timer...");
+  Serial.println("✓ Display working correctly");
+  
+  delay(2000);
+  
+  // Initialize rounds
+  initializeDefaultRounds();
+  currentRound = 0;
+  remainingSeconds = rounds[0].duration * 60;
+  timerRunning = true;
+  roundStartTime = millis();
+  startingSeconds = remainingSeconds;
+  
+  drawTimerDisplay();
+  Serial.println("✓ Timer started automatically");
+  Serial.println("========================================\n");
+}
+
+void loop() {
+  // Update timer if running
+  if (timerRunning) {
+    unsigned long currentTime = millis();
+    unsigned long elapsed = (currentTime - roundStartTime) / 1000;
+    int newRemaining = startingSeconds - elapsed;
+    
+    if (newRemaining != remainingSeconds) {
+      remainingSeconds = newRemaining;
+      
+      if (remainingSeconds <= 0) {
+        // Round finished
+        remainingSeconds = 0;
+        timerRunning = false;
+        
+        Serial.println("Round finished!");
+        
+        // Auto-advance to next round
+        if (currentRound < totalRounds - 1) {
+          delay(2000);
+          currentRound++;
+          remainingSeconds = rounds[currentRound].duration * 60;
+          startingSeconds = remainingSeconds;
+          roundStartTime = millis();
+          timerRunning = true;
+          Serial.print("Advanced to round ");
+          Serial.println(currentRound + 1);
+        } else {
+          // Tournament finished
+          tft.fillScreen(TFT_BLACK);
+          tft.setTextSize(3);
+          tft.setTextColor(TFT_GREEN);
+          tft.setCursor(20, 140);
+          tft.println("FINISHED!");
+          Serial.println("Tournament complete!");
+          while(true) delay(1000);
+        }
+      }
+      
+      drawTimerDisplay();
+    }
+  }
+  
+  delay(100);
+}

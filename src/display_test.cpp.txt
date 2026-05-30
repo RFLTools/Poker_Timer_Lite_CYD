@@ -1,0 +1,134 @@
+// Simple CYD Display Test
+// Rename this file to main.cpp to test display only
+// This will help diagnose display issues
+
+#include <Arduino.h>
+#include <TFT_eSPI.h>
+
+TFT_eSPI tft = TFT_eSPI();
+
+#define TFT_BL 21
+
+void setup() {
+  Serial.begin(115200);
+  delay(1000);
+  
+  Serial.println("\n\n========================================");
+  Serial.println("CYD Display Test");
+  Serial.println("========================================\n");
+  
+  // Initialize backlight
+  pinMode(TFT_BL, OUTPUT);
+  digitalWrite(TFT_BL, HIGH);
+  Serial.println("✓ Backlight enabled (GPIO 21)");
+  
+  // Initialize display
+  Serial.println("\nInitializing TFT display...");
+  tft.init();
+  Serial.println("✓ tft.init() completed");
+  
+  // Set rotation
+  tft.setRotation(0); // 0=portrait, 1=landscape
+  Serial.println("✓ Rotation set to 0 (portrait 240x320)");
+  
+  // Test 1: Fill screen with color
+  Serial.println("\nTest 1: Filling screen RED...");
+  tft.fillScreen(TFT_RED);
+  delay(1000);
+  
+  Serial.println("Test 2: Filling screen GREEN...");
+  tft.fillScreen(TFT_GREEN);
+  delay(1000);
+  
+  Serial.println("Test 3: Filling screen BLUE...");
+  tft.fillScreen(TFT_BLUE);
+  delay(1000);
+  
+  Serial.println("Test 4: Filling screen WHITE...");
+  tft.fillScreen(TFT_WHITE);
+  delay(1000);
+  
+  Serial.println("Test 5: Filling screen BLACK...");
+  tft.fillScreen(TFT_BLACK);
+  delay(500);
+  
+  // Test 2: Draw rectangles
+  Serial.println("\nTest 6: Drawing colored rectangles...");
+  tft.fillRect(0, 0, 60, 60, TFT_RED);
+  tft.fillRect(60, 0, 60, 60, TFT_GREEN);
+  tft.fillRect(120, 0, 60, 60, TFT_BLUE);
+  tft.fillRect(180, 0, 60, 60, TFT_YELLOW);
+  delay(1000);
+  
+  // Test 3: Draw text
+  Serial.println("\nTest 7: Drawing text...");
+  tft.fillScreen(TFT_BLACK);
+  tft.setTextColor(TFT_WHITE);
+  tft.setTextSize(2);
+  tft.setCursor(20, 100);
+  tft.println("CYD Display");
+  tft.setCursor(20, 130);
+  tft.println("Test OK!");
+  
+  tft.setTextSize(1);
+  tft.setCursor(20, 170);
+  tft.println("240 x 320 pixels");
+  tft.setCursor(20, 185);
+  tft.println("ILI9341 Driver");
+  
+  Serial.println("\n========================================");
+  Serial.println("Display test complete!");
+  Serial.println("If you see colored screens and text,");
+  Serial.println("your display is working correctly.");
+  Serial.println("========================================\n");
+}
+
+void loop() {
+  // Cycle through colors
+  static unsigned long lastChange = 0;
+  static int colorIndex = 0;
+  
+  if (millis() - lastChange > 2000) {
+    lastChange = millis();
+    
+    tft.fillScreen(TFT_BLACK);
+    tft.setTextColor(TFT_WHITE);
+    tft.setTextSize(2);
+    tft.setCursor(40, 140);
+    
+    switch (colorIndex) {
+      case 0:
+        tft.fillScreen(TFT_RED);
+        Serial.println("Screen: RED");
+        break;
+      case 1:
+        tft.fillScreen(TFT_GREEN);
+        Serial.println("Screen: GREEN");
+        break;
+      case 2:
+        tft.fillScreen(TFT_BLUE);
+        Serial.println("Screen: BLUE");
+        break;
+      case 3:
+        tft.fillScreen(TFT_YELLOW);
+        Serial.println("Screen: YELLOW");
+        break;
+      case 4:
+        tft.fillScreen(TFT_WHITE);
+        Serial.println("Screen: WHITE");
+        break;
+      case 5:
+        tft.fillScreen(TFT_BLACK);
+        tft.setTextColor(TFT_WHITE);
+        tft.setTextSize(3);
+        tft.setCursor(30, 140);
+        tft.println("CYD TEST");
+        Serial.println("Screen: BLACK with text");
+        break;
+    }
+    
+    colorIndex = (colorIndex + 1) % 6;
+  }
+  
+  delay(100);
+}

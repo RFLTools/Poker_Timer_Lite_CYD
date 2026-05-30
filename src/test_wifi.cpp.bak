@@ -1,0 +1,82 @@
+// Simple WiFi AP Test for ESP32-C3
+// This test always creates an AP - no button needed
+// Use this to test if your ESP32-C3 can create WiFi AP
+
+#include <Arduino.h>
+#include <WiFi.h>
+
+void setup() {
+  Serial.begin(115200);
+  delay(1000);
+  
+  Serial.println("\n\n================================");
+  Serial.println("ESP32-C3 WiFi AP Test");
+  Serial.println("================================\n");
+  
+  // Get MAC address
+  Serial.print("MAC Address: ");
+  Serial.println(WiFi.macAddress());
+  
+  // Disconnect from any WiFi
+  Serial.println("Disconnecting from any WiFi...");
+  WiFi.disconnect(true);
+  WiFi.mode(WIFI_OFF);
+  delay(1000);
+  
+  // Set mode to AP
+  Serial.println("Setting WiFi mode to AP...");
+  WiFi.mode(WIFI_AP);
+  delay(500);
+  
+  // Try to start AP
+  Serial.println("\nAttempting to start Access Point...");
+  Serial.println("SSID: PokerTimerTest");
+  Serial.println("Password: (none)");
+  
+  bool result = WiFi.softAP("PokerTimerTest", "", 1, 0, 4);
+  
+  Serial.println("\n--- AP Start Result ---");
+  if (result) {
+    Serial.println("✓ SUCCESS! AP Started!");
+  } else {
+    Serial.println("✗ FAILED! AP did not start!");
+  }
+  
+  delay(1000);
+  
+  // Get IP address
+  IPAddress IP = WiFi.softAPIP();
+  Serial.println("\n--- AP Configuration ---");
+  Serial.print("IP Address: ");
+  Serial.println(IP);
+  Serial.print("SSID: ");
+  Serial.println(WiFi.softAPSSID());
+  Serial.print("Status: ");
+  Serial.println(WiFi.status());
+  Serial.println("========================\n");
+  
+  if (result) {
+    Serial.println("✓ Look for 'PokerTimerTest' WiFi network on your phone!");
+    Serial.println("✓ If you see it, your ESP32-C3 WiFi is working!");
+  } else {
+    Serial.println("✗ WiFi AP failed to start - possible hardware/firmware issue");
+  }
+}
+
+void loop() {
+  static unsigned long lastPrint = 0;
+  
+  if (millis() - lastPrint > 5000) {
+    lastPrint = millis();
+    
+    int numStations = WiFi.softAPgetStationNum();
+    Serial.print("Stations connected: ");
+    Serial.println(numStations);
+    
+    if (numStations > 0) {
+      Serial.println("✓ A device connected to the AP!");
+    }
+  }
+  
+  delay(100);
+}
