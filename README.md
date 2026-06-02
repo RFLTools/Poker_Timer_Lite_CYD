@@ -16,6 +16,7 @@ A poker tournament blind timer for the ESP32-2432S028 "Cheap Yellow Display" (CY
 - 💾 **Persistent Storage** - Settings and timer state saved to flash
 - 🔄 **Auto-Resume** - Continues from last position after power loss
 - ⚙️ **Easy Config Mode** - Tap gear icon to configure
+- 🔗 **NEW: Multi-Device Sync** - Unlimited slave displays via ESPNow (see [Multi-Slave Guide](MULTI_SLAVE_QUICK_START.md))
 
 ## Hardware Requirements
 
@@ -97,6 +98,34 @@ The timer starts with default settings:
 - Timer automatically advances when round finishes
 - Settings auto-save every 10 seconds
 - Timer state preserved on power loss
+
+### 5. Multi-Device Synchronization (Optional)
+
+**Sync multiple displays around your poker table!**
+
+Set up one device as **Master** and configure additional devices as **Slaves**:
+
+1. **Master Device:**
+   - Tap gear → Config mode
+   - Set "Device Sync Mode" to **Master**
+   - Save & reboot
+   - Display shows `M:xS` (x = number of slaves)
+
+2. **Slave Devices:**
+   - Tap gear → Config mode
+   - Set "Device Sync Mode" to **Slave**
+   - Save & reboot
+   - Display shows green `S` (connected)
+
+3. **Features:**
+   - Unlimited slave devices supported
+   - Bidirectional control (any device can control timer)
+   - ~200m range outdoors, ~50m through walls
+   - Auto-reconnect if devices lose connection
+   - <10ms sync latency
+
+📖 **See [Multi-Slave Quick Start](MULTI_SLAVE_QUICK_START.md)** for detailed setup instructions  
+📖 **See [ESPNow Sync Documentation](ESPNOW_SYNC.md)** for technical details
 
 ## Configuration
 

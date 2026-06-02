@@ -17,6 +17,8 @@
 #include <ESPAsyncWebServer.h>
 #include <Preferences.h>
 #include <nvs_flash.h>
+#include <esp_now.h>
+#include <esp_wifi.h>
 
 // Touch screen configuration - CYD uses SEPARATE SPI bus for touch!
 #define TOUCH_CS 33
@@ -42,6 +44,69 @@ const int SCREEN_HEIGHT = 240;
 
 // Buzzer control (P4 speaker connector)
 #define BUZZER_PIN 26
+
+// ESPNow configuration
+enum DeviceMode {
+  MODE_STANDALONE = 0,
+  MODE_MASTER = 1,
+  MODE_SLAVE = 2
+};
+
+// ESPNow message types
+enum MessageType {
+  MSG_TIMER_STATE = 1,      // Master broadcasts current timer state
+  MSG_ROUND_CONFIG = 2,     // Master broadcasts round configuration
+  MSG_HEARTBEAT = 3         // Slave sends heartbeat to master
+};
+
+// Heartbeat message (sent by slave every 5 seconds)
+struct HeartbeatMessage {
+  uint8_t messageType;      // MSG_HEARTBEAT
+  uint8_t slaveId;          // For future use
+};
+
+// ESPNow timer state message (sent by master every second)
+struct TimerStateMessage {
+  uint8_t messageType;      // MSG_TIMER_STATE
+  uint8_t currentRound;
+  uint16_t remainingSeconds;
+  bool timerRunning;
+  uint32_t timestamp;       // For sync verification
+};
+
+// ESPNow round configuration message (sent when config changes)
+struct RoundConfigMessage {
+  uint8_t messageType;      // MSG_ROUND_CONFIG
+  uint8_t roundIndex;       // Which round this configures
+  uint16_t duration;
+  uint16_t smallBlind;
+  uint16_t bigBlind;
+  uint16_t ante;
+  bool isBreak;
+  uint8_t totalRounds;      // Total number of rounds
+};
+
+
+
+// ESPNow state
+DeviceMode deviceMode = MODE_STANDALONE;
+uint8_t broadcastAddress[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF}; // Broadcast to all
+bool espNowInitialized = false;
+unsigned long lastSyncReceived = 0;
+const unsigned long SYNC_TIMEOUT = 5000;  // 5 seconds without sync = disconnected
+bool slaveShowNextRound = true;  // For slaves: toggle next round visibility (start with next round shown)
+bool isDrawing = false;  // Prevent re-entrant calls to drawTimerDisplay
+
+// Slave tracking (for master to know which slaves are active)
+#define MAX_TRACKED_SLAVES 10
+struct SlaveInfo {
+  uint8_t macAddress[6];
+  unsigned long lastSeen;
+  bool active;
+  bool configSynced;  // Have we sent round configs to this slave?
+};
+SlaveInfo trackedSlaves[MAX_TRACKED_SLAVES];
+int activeSlaveCount = 0;
 
 // Preferences for storing configuration
 Preferences preferences;
@@ -106,6 +171,24 @@ void playBeep(int frequency, int duration);
 void playButtonBeep();
 void playRoundEndBeeps();
 
+// ESPNow function prototypes
+void initESPNow();
+void onESPNowDataSent(const uint8_t *mac_addr, esp_now_send_status_t status);
+void onESPNowDataRecv(const uint8_t *mac_addr, const uint8_t *data, int data_len);
+void broadcastTimerState();
+void broadcastRoundConfig(int roundIndex);
+void broadcastAllRoundConfigs();
+void syncSlaveConfigs();
+void sendHeartbeat();
+void handleTimerStateMessage(const TimerStateMessage *msg);
+void handleRoundConfigMessage(const RoundConfigMessage *msg);
+void handleHeartbeatMessage(const uint8_t *senderMac);
+bool isSyncConnected();
+void updateSlaveTracking(const uint8_t *macAddr);
+void cleanupInactiveSlaves();
+String macToString(const uint8_t *mac);
+int getActiveSlaveCount();
+
 void initializeDefaultRounds() {
   // Default 25 rounds, 15 minutes each
   // Break every 3 rounds (after rounds 3, 6, 9, etc.)
@@ -148,6 +231,9 @@ void saveRoundsToPreferences() {
   Serial.println("✓ Preferences opened for writing");
   
   preferences.putInt("totalRounds", totalRounds);
+  preferences.putInt("deviceMode", (int)deviceMode);
+  Serial.print("✓ Device mode saved: ");
+  Serial.println(deviceMode == MODE_MASTER ? "MASTER" : deviceMode == MODE_SLAVE ? "SLAVE" : "STANDALONE");
   
   for (int i = 0; i < totalRounds; i++) {
     char key[20];
@@ -174,6 +260,7 @@ void loadRoundsFromPreferences() {
   if (!nvsAvailable) {
     Serial.println("⚠ NVS not available, using defaults");
     initializeDefaultRounds();
+    deviceMode = MODE_STANDALONE;
     return;
   }
   
@@ -184,11 +271,17 @@ void loadRoundsFromPreferences() {
     Serial.println("✗ Failed to open preferences (this is normal on first run)");
     Serial.println("Using default configuration");
     initializeDefaultRounds();
+    deviceMode = MODE_STANDALONE;
     preferences.end();
     return;
   }
   
   Serial.println("✓ Preferences opened successfully");
+  
+  // Load device mode
+  deviceMode = (DeviceMode)preferences.getInt("deviceMode", MODE_STANDALONE);
+  Serial.print("✓ Device mode loaded: ");
+  Serial.println(deviceMode == MODE_MASTER ? "MASTER" : deviceMode == MODE_SLAVE ? "SLAVE" : "STANDALONE");
   
   if (preferences.isKey("totalRounds")) {
     Serial.println("✓ Found saved configuration");
@@ -385,6 +478,32 @@ String generateConfigHTML() {
       margin-bottom: 20px;
       font-size: 24px;
     }
+    .device-mode {
+      background: #e8eaf6;
+      padding: 15px;
+      margin-bottom: 20px;
+      border-radius: 8px;
+      border-left: 4px solid #667eea;
+    }
+    .device-mode h2 {
+      font-size: 16px;
+      color: #667eea;
+      margin-bottom: 10px;
+    }
+    select {
+      width: 100%;
+      padding: 10px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      font-size: 14px;
+      background: white;
+    }
+    .mode-info {
+      font-size: 12px;
+      color: #666;
+      margin-top: 8px;
+      line-height: 1.4;
+    }
     .round {
       background: #f8f9fa;
       padding: 15px;
@@ -477,6 +596,26 @@ String generateConfigHTML() {
   <div class="container">
     <h1>🎰 Poker Timer Config</h1>
     <form id="configForm">
+      <div class="device-mode">
+        <h2>Device Sync Mode</h2>
+        <select name="deviceMode" id="deviceMode">
+          <option value="0")rawliteral";
+  
+  if (deviceMode == MODE_STANDALONE) html += " selected";
+  html += R"rawliteral(>Standalone (No Sync)</option>
+          <option value="1")rawliteral";
+  
+  if (deviceMode == MODE_MASTER) html += " selected";
+  html += R"rawliteral(>Master (Controls Others)</option>
+          <option value="2")rawliteral";
+  
+  if (deviceMode == MODE_SLAVE) html += " selected";
+  html += R"rawliteral(>Slave (Follows Master)</option>
+        </select>
+        <div class="mode-info" id="modeInfo">
+          Select device synchronization mode using ESPNow.
+        </div>
+      </div>
 )rawliteral";
 
   // Generate form fields for each round
@@ -522,6 +661,23 @@ String generateConfigHTML() {
     </form>
   </div>
   <script>
+    // Update mode info text when selection changes
+    const deviceModeSelect = document.getElementById('deviceMode');
+    const modeInfo = document.getElementById('modeInfo');
+    
+    const modeDescriptions = {
+      '0': 'Standalone mode - no synchronization. Device operates independently.',
+      '1': 'Master mode - controls the timer and broadcasts to all slave devices via ESPNow.',
+      '2': 'Slave mode - follows master device. All control commands sent to master.'
+    };
+    
+    deviceModeSelect.addEventListener('change', (e) => {
+      modeInfo.textContent = modeDescriptions[e.target.value];
+    });
+    
+    // Set initial description
+    modeInfo.textContent = modeDescriptions[deviceModeSelect.value];
+    
     document.getElementById('configForm').onsubmit = async (e) => {
       e.preventDefault();
       const formData = new FormData(e.target);
@@ -689,6 +845,17 @@ void startConfigMode() {
       Serial.println("Received config data:");
       Serial.println(jsonData);
       
+      // Parse device mode
+      String deviceModeKey = "\"deviceMode\":\"";
+      int deviceModeIdx = jsonData.indexOf(deviceModeKey);
+      if (deviceModeIdx >= 0) {
+        deviceModeIdx += deviceModeKey.length();
+        int modeValue = jsonData.substring(deviceModeIdx, jsonData.indexOf("\"", deviceModeIdx)).toInt();
+        deviceMode = (DeviceMode)modeValue;
+        Serial.print("Device mode set to: ");
+        Serial.println(deviceMode == MODE_MASTER ? "MASTER" : deviceMode == MODE_SLAVE ? "SLAVE" : "STANDALONE");
+      }
+      
       // Parse the form data
       for (int i = 0; i < totalRounds; i++) {
         String durKey = "\"dur" + String(i) + "\":\"";
@@ -733,6 +900,13 @@ void startConfigMode() {
       playButtonBeep();
       request->send(200, "text/plain", "OK");
       
+      // If master, broadcast new config to all slaves before rebooting
+      if (deviceMode == MODE_MASTER && espNowInitialized) {
+        Serial.println("Master config changed - broadcasting to slaves...");
+        broadcastAllRoundConfigs();
+        delay(1000);  // Give time for all messages to send
+      }
+      
       delay(500);
       ESP.restart();
     }
@@ -767,6 +941,13 @@ bool isTouchInButton(int x, int y, TouchButton &btn) {
 }
 
 void drawTimerDisplay() {
+  // Prevent re-entrant calls (protection against race conditions)
+  if (isDrawing) {
+    Serial.println("WARNING: Skipping re-entrant drawTimerDisplay call");
+    return;
+  }
+  isDrawing = true;
+  
   tft.fillScreen(TFT_BLACK);
   
   // LANDSCAPE LAYOUT (320x240) - buttons on left, info on right
@@ -784,6 +965,20 @@ void drawTimerDisplay() {
   }
   
   drawButton(btnStartPause);
+  
+  // Grey out NEXT/PREV on slave devices (not functional)
+  if (deviceMode == MODE_SLAVE) {
+    btnNext.color = TFT_DARKGREY;
+    btnNext.textColor = 0x8410;  // Light grey color (RGB565)
+    btnPrev.color = TFT_DARKGREY;
+    btnPrev.textColor = 0x8410;  // Light grey color (RGB565)
+  } else {
+    btnNext.color = TFT_BLUE;
+    btnNext.textColor = TFT_WHITE;
+    btnPrev.color = TFT_ORANGE;
+    btnPrev.textColor = TFT_BLACK;
+  }
+  
   drawButton(btnNext);
   drawButton(btnPrev);
   
@@ -845,7 +1040,12 @@ void drawTimerDisplay() {
   
   // Status indicator (bottom right)
   tft.setTextSize(2);
-  if (timerRunning) {
+  if (deviceMode == MODE_SLAVE) {
+    // Slaves always show "SLAVE" in red
+    tft.setTextColor(TFT_RED, TFT_BLACK);
+    tft.setCursor(145, 190);
+    tft.print("SLAVE");
+  } else if (timerRunning) {
     tft.setTextColor(TFT_GREEN, TFT_BLACK);
     tft.setCursor(130, 190);
     tft.print("RUNNING");
@@ -855,9 +1055,43 @@ void drawTimerDisplay() {
     tft.print("PAUSED");
   }
   
+  // Sync status indicator (top left of content area)
+  if (deviceMode == MODE_MASTER) {
+    tft.setTextSize(1);
+    tft.setTextColor(TFT_GREEN, TFT_BLACK);
+    tft.setCursor(100, 0);
+    tft.print("M:");  // Master indicator
+    tft.print(getActiveSlaveCount());  // Number of connected slaves
+    tft.print("S");  // S for "Slaves"
+  } else if (deviceMode == MODE_SLAVE) {
+    tft.setTextSize(1);
+    if (isSyncConnected()) {
+      tft.setTextColor(TFT_GREEN, TFT_BLACK);
+      tft.setCursor(100, 0);
+      tft.print("S");  // Slave synced
+    } else {
+      tft.setTextColor(TFT_RED, TFT_BLACK);
+      tft.setCursor(100, 0);
+      tft.print("X");  // Slave disconnected
+    }
+  }
+  
   // Config button or next round info (top right corner)
-  if (!timerRunning) {
-    // Draw config button (gear icon in top right) - only when paused
+  bool showGear = false;
+  bool showNextRound = false;
+  
+  if (deviceMode == MODE_SLAVE) {
+    // Slave: toggle between gear and next round
+    showGear = !slaveShowNextRound;
+    showNextRound = slaveShowNextRound;
+  } else {
+    // Master/Standalone: show gear when paused, next round when running
+    showGear = !timerRunning;
+    showNextRound = timerRunning;
+  }
+  
+  if (showGear) {
+    // Draw config button (gear icon in top right)
     tft.fillRoundRect(btnConfig.x, btnConfig.y, btnConfig.w, btnConfig.h, 8, btnConfig.color);
     // Draw a simple gear icon
     tft.drawCircle(btnConfig.x + 15, btnConfig.y + 15, 10, TFT_WHITE);
@@ -871,29 +1105,35 @@ void drawTimerDisplay() {
       tft.drawLine(x1, y1, x2, y2, TFT_WHITE);
     }
   } else {
-    // When running, display next round info at top right
-    if (currentRound < totalRounds - 1) {
-      tft.setTextSize(1);
-      
-      if (rounds[currentRound + 1].isBreak) {
-        // Next round is a break
-        tft.setTextColor(TFT_YELLOW, TFT_BLACK);
-        tft.setCursor(270, 10);
-        tft.println("Next:");
-        tft.setCursor(265, 22);
-        tft.println("Break");
-      } else {
-        // Next round has blinds - display them
-        tft.setTextColor(TFT_CYAN, TFT_BLACK);
-        tft.setCursor(270, 10);
-        tft.println("Next:");
-        tft.setCursor(260, 22);
-        tft.print(rounds[currentRound + 1].smallBlind);
-        tft.print("/");
-        tft.println(rounds[currentRound + 1].bigBlind);
-      }
+    // Clear the gear area when hidden
+    tft.fillRect(btnConfig.x, btnConfig.y, btnConfig.w, btnConfig.h, TFT_BLACK);
+  }
+  
+  if (showNextRound && currentRound < totalRounds - 1) {
+    // Display next round info at top right
+    tft.setTextSize(1);
+    
+    if (rounds[currentRound + 1].isBreak) {
+      // Next round is a break
+      tft.setTextColor(TFT_YELLOW, TFT_BLACK);
+      tft.setCursor(270, 10);
+      tft.println("Next:");
+      tft.setCursor(265, 22);
+      tft.println("Break");
+    } else {
+      // Next round has blinds - display them
+      tft.setTextColor(TFT_CYAN, TFT_BLACK);
+      tft.setCursor(270, 10);
+      tft.println("Next:");
+      tft.setCursor(260, 22);
+      tft.print(rounds[currentRound + 1].smallBlind);
+      tft.print("/");
+      tft.println(rounds[currentRound + 1].bigBlind);
     }
   }
+  
+  // Reset drawing flag
+  isDrawing = false;
 }
 
 void handleTouch() {
@@ -1045,19 +1285,50 @@ void handleTouch() {
   else if (isTouchInButton(x, y, btnStartPause)) {
     Serial.println("Start/Pause pressed");
     playButtonBeep();
-    timerRunning = !timerRunning;
-    if (timerRunning) {
-      startingSeconds = remainingSeconds;
-      roundStartTime = millis();
-      Serial.println("Timer started/resumed");
+    
+    if (deviceMode == MODE_SLAVE) {
+      // Slave: toggle next round visibility
+      slaveShowNextRound = !slaveShowNextRound;
+      Serial.print("Slave: Next round display ");
+      Serial.println(slaveShowNextRound ? "SHOWN" : "HIDDEN");
+      
+      // Wait for touch release to prevent double-trigger
+      while (ts.touched()) {
+        delay(10);
+      }
+      delay(200);  // Extra debounce delay
+      
+      Serial.println("Slave: Updating display...");
+      drawTimerDisplay();
+      Serial.println("Slave: Display updated successfully");
     } else {
-      Serial.println("Timer paused");
+      // Master or standalone executes locally
+      timerRunning = !timerRunning;
+      if (timerRunning) {
+        startingSeconds = remainingSeconds;
+        roundStartTime = millis();
+        Serial.println("Timer started/resumed");
+      } else {
+        Serial.println("Timer paused");
+      }
+      saveTimerState();
+      
+      // Master broadcasts the change
+      if (deviceMode == MODE_MASTER && espNowInitialized) {
+        broadcastTimerState();
+      }
+      
+      drawTimerDisplay();
     }
-    saveTimerState();
-    drawTimerDisplay();
   }
   // Check Next button
   else if (isTouchInButton(x, y, btnNext)) {
+    // NEXT button disabled on slaves
+    if (deviceMode == MODE_SLAVE) {
+      Serial.println("Next pressed on slave - ignoring (button disabled)");
+      return;
+    }
+    
     Serial.println("Next pressed");
     playButtonBeep();
     
@@ -1118,6 +1389,7 @@ void handleTouch() {
       }
       
       if (confirmed) {
+        // Master or standalone executes locally
         currentRound++;
         remainingSeconds = rounds[currentRound].duration * 60;
         startingSeconds = remainingSeconds;
@@ -1125,6 +1397,11 @@ void handleTouch() {
         Serial.print("Next round: ");
         Serial.println(currentRound + 1);
         saveTimerState();
+        
+        // Master broadcasts the change
+        if (deviceMode == MODE_MASTER && espNowInitialized) {
+          broadcastTimerState();
+        }
       }
       
       drawTimerDisplay();
@@ -1132,6 +1409,12 @@ void handleTouch() {
   }
   // Check Prev button
   else if (isTouchInButton(x, y, btnPrev)) {
+    // PREV button disabled on slaves
+    if (deviceMode == MODE_SLAVE) {
+      Serial.println("Prev pressed on slave - ignoring (button disabled)");
+      return;
+    }
+    
     Serial.println("Prev pressed");
     playButtonBeep();
     
@@ -1192,6 +1475,7 @@ void handleTouch() {
       }
       
       if (confirmed) {
+        // Master or standalone executes locally
         currentRound--;
         remainingSeconds = rounds[currentRound].duration * 60;
         startingSeconds = remainingSeconds;
@@ -1199,11 +1483,376 @@ void handleTouch() {
         Serial.print("Previous round: ");
         Serial.println(currentRound + 1);
         saveTimerState();
+        
+        // Master broadcasts the change
+        if (deviceMode == MODE_MASTER && espNowInitialized) {
+          broadcastTimerState();
+        }
       }
       
       drawTimerDisplay();
     }
   }
+}
+
+// ESPNow Helper Functions
+String macToString(const uint8_t *mac) {
+  char macStr[18];
+  snprintf(macStr, sizeof(macStr), "%02X:%02X:%02X:%02X:%02X:%02X",
+           mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+  return String(macStr);
+}
+
+void updateSlaveTracking(const uint8_t *macAddr) {
+  Serial.print("updateSlaveTracking called for ");
+  Serial.println(macToString(macAddr));
+  
+  // Find existing slave or add new one
+  int freeSlot = -1;
+  for (int i = 0; i < MAX_TRACKED_SLAVES; i++) {
+    if (trackedSlaves[i].active && 
+        memcmp(trackedSlaves[i].macAddress, macAddr, 6) == 0) {
+      // Existing slave - update timestamp
+      trackedSlaves[i].lastSeen = millis();
+      Serial.println("  -> Existing slave, timestamp updated");
+      return;
+    }
+    if (!trackedSlaves[i].active && freeSlot == -1) {
+      freeSlot = i;
+    }
+  }
+  
+  // New slave - add to tracking
+  if (freeSlot >= 0) {
+    int oldCount = activeSlaveCount;
+    memcpy(trackedSlaves[freeSlot].macAddress, macAddr, 6);
+    trackedSlaves[freeSlot].lastSeen = millis();
+    trackedSlaves[freeSlot].active = true;
+    trackedSlaves[freeSlot].configSynced = false;  // New slave needs config
+    activeSlaveCount++;
+    Serial.print("  -> NEW SLAVE! Total slaves: ");
+    Serial.println(activeSlaveCount);
+    
+    // Update display when slave count changes
+    if (oldCount != activeSlaveCount && !isDrawing) {
+      drawTimerDisplay();
+    }
+  } else {
+    Serial.println("  -> ERROR: No free slot for new slave!");
+  }
+}
+
+void cleanupInactiveSlaves() {
+  unsigned long now = millis();
+  int oldCount = activeSlaveCount;
+  
+  for (int i = 0; i < MAX_TRACKED_SLAVES; i++) {
+    if (trackedSlaves[i].active) {
+      if (now - trackedSlaves[i].lastSeen > 10000) {  // 10 second timeout
+        Serial.print("Slave disconnected: ");
+        Serial.println(macToString(trackedSlaves[i].macAddress));
+        trackedSlaves[i].active = false;
+        activeSlaveCount--;
+      }
+    }
+  }
+  
+  // Update display when slave count changes
+  if (oldCount != activeSlaveCount && !isDrawing) {
+    Serial.print("Slave count changed from ");
+    Serial.print(oldCount);
+    Serial.print(" to ");
+    Serial.println(activeSlaveCount);
+    drawTimerDisplay();
+  }
+}
+
+int getActiveSlaveCount() {
+  return activeSlaveCount;
+}
+
+// ESPNow Functions
+void initESPNow() {
+  if (deviceMode == MODE_STANDALONE) {
+    Serial.println("Device in STANDALONE mode - ESPNow disabled");
+    return;
+  }
+  
+  Serial.println("\n--- Initializing ESPNow ---");
+  
+  // Set WiFi to station mode (required for ESPNow)
+  WiFi.mode(WIFI_STA);
+  WiFi.disconnect();
+  delay(100);
+  
+  // Print MAC address
+  Serial.print("MAC Address: ");
+  Serial.println(WiFi.macAddress());
+  
+  // Initialize ESPNow
+  if (esp_now_init() != ESP_OK) {
+    Serial.println("✗ ESPNow init failed!");
+    espNowInitialized = false;
+    return;
+  }
+  
+  Serial.println("✓ ESPNow initialized successfully");
+  espNowInitialized = true;
+  
+  // Register callbacks
+  esp_now_register_send_cb(onESPNowDataSent);
+  esp_now_register_recv_cb(onESPNowDataRecv);
+  
+  // Add broadcast peer (both master and slave need this)
+  esp_now_peer_info_t peerInfo = {};
+  memcpy(peerInfo.peer_addr, broadcastAddress, 6);
+  peerInfo.channel = 0;  // Use channel 0 for auto
+  peerInfo.encrypt = false;
+  
+  if (esp_now_add_peer(&peerInfo) != ESP_OK) {
+    Serial.println("✗ Failed to add broadcast peer");
+  } else {
+    if (deviceMode == MODE_MASTER) {
+      Serial.println("✓ Broadcast peer added (Master will broadcast to all slaves)");
+    } else {
+      Serial.println("✓ Broadcast peer added (Slave can send to master and receive broadcasts)");
+    }
+  }
+  
+  Serial.print("Device mode: ");
+  Serial.println(deviceMode == MODE_MASTER ? "MASTER" : "SLAVE");
+  Serial.println("---------------------------\n");
+}
+
+void onESPNowDataSent(const uint8_t *mac_addr, esp_now_send_status_t status) {
+  // Optional: log send status for debugging
+  // Serial.print("Send Status: ");
+  // Serial.println(status == ESP_NOW_SEND_SUCCESS ? "Success" : "Fail");
+}
+
+void onESPNowDataRecv(const uint8_t *mac_addr, const uint8_t *data, int data_len) {
+  if (data_len < 1) return;
+  
+  uint8_t messageType = data[0];
+  
+  if (messageType == MSG_TIMER_STATE && deviceMode == MODE_SLAVE) {
+    if (data_len == sizeof(TimerStateMessage)) {
+      handleTimerStateMessage((const TimerStateMessage*)data);
+    } else {
+      Serial.print("Slave: Timer state message size mismatch. Expected ");
+      Serial.print(sizeof(TimerStateMessage));
+      Serial.print(", got ");
+      Serial.println(data_len);
+    }
+  } else if (messageType == MSG_ROUND_CONFIG && deviceMode == MODE_SLAVE) {
+    if (data_len == sizeof(RoundConfigMessage)) {
+      handleRoundConfigMessage((const RoundConfigMessage*)data);
+    }
+  } else if (messageType == MSG_HEARTBEAT && deviceMode == MODE_MASTER) {
+    Serial.print("Master: Received MSG_HEARTBEAT, size ");
+    Serial.print(data_len);
+    Serial.print(" (expected ");
+    Serial.print(sizeof(HeartbeatMessage));
+    Serial.println(")");
+    
+    if (data_len == sizeof(HeartbeatMessage)) {
+      Serial.print("Master: Processing heartbeat from ");
+      Serial.println(macToString(mac_addr));
+      // Track the slave that sent heartbeat
+      updateSlaveTracking(mac_addr);
+      handleHeartbeatMessage(mac_addr);
+    } else {
+      Serial.println("Master: Heartbeat size mismatch - ignored");
+    }
+  }
+}
+
+void broadcastTimerState() {
+  if (!espNowInitialized || deviceMode != MODE_MASTER) return;
+  
+  TimerStateMessage msg;
+  msg.messageType = MSG_TIMER_STATE;
+  msg.currentRound = currentRound;
+  msg.remainingSeconds = remainingSeconds;
+  msg.timerRunning = timerRunning;
+  msg.timestamp = millis();
+  
+  esp_err_t result = esp_now_send(broadcastAddress, (uint8_t*)&msg, sizeof(msg));
+  
+  // Debug log (only log occasionally to avoid spam)
+  static unsigned long lastLog = 0;
+  if (millis() - lastLog > 5000) {  // Log every 5 seconds
+    lastLog = millis();
+    Serial.print("Master TX: Round ");
+    Serial.print(currentRound + 1);
+    Serial.print(", Time ");
+    Serial.print(remainingSeconds);
+    Serial.print("s, ");
+    Serial.print(timerRunning ? "RUNNING" : "PAUSED");
+    Serial.print(" - Send ");
+    Serial.println(result == ESP_OK ? "OK" : "FAILED");
+  }
+}
+
+void broadcastRoundConfig(int roundIndex) {
+  if (!espNowInitialized || deviceMode != MODE_MASTER) return;
+  if (roundIndex < 0 || roundIndex >= totalRounds) return;
+  
+  RoundConfigMessage msg;
+  msg.messageType = MSG_ROUND_CONFIG;
+  msg.roundIndex = roundIndex;
+  msg.duration = rounds[roundIndex].duration;
+  msg.smallBlind = rounds[roundIndex].smallBlind;
+  msg.bigBlind = rounds[roundIndex].bigBlind;
+  msg.ante = rounds[roundIndex].ante;
+  msg.isBreak = rounds[roundIndex].isBreak;
+  msg.totalRounds = totalRounds;
+  
+  esp_now_send(broadcastAddress, (uint8_t*)&msg, sizeof(msg));
+}
+
+void broadcastAllRoundConfigs() {
+  if (!espNowInitialized || deviceMode != MODE_MASTER) return;
+  
+  Serial.print("Broadcasting all ");
+  Serial.print(totalRounds);
+  Serial.println(" round configs to slaves...");
+  
+  for (int i = 0; i < totalRounds; i++) {
+    broadcastRoundConfig(i);
+    delay(20);  // Small delay between messages to avoid flooding
+  }
+  
+  Serial.println("All round configs broadcasted");
+}
+
+void syncSlaveConfigs() {
+  // Check if any slaves need config sync
+  if (!espNowInitialized || deviceMode != MODE_MASTER) return;
+  
+  bool needsSync = false;
+  for (int i = 0; i < MAX_TRACKED_SLAVES; i++) {
+    if (trackedSlaves[i].active && !trackedSlaves[i].configSynced) {
+      needsSync = true;
+      break;
+    }
+  }
+  
+  if (needsSync) {
+    // Broadcast all round configs
+    broadcastAllRoundConfigs();
+    
+    // Mark all active slaves as synced
+    for (int i = 0; i < MAX_TRACKED_SLAVES; i++) {
+      if (trackedSlaves[i].active) {
+        trackedSlaves[i].configSynced = true;
+      }
+    }
+  }
+}
+
+void sendHeartbeat() {
+  if (!espNowInitialized || deviceMode != MODE_SLAVE) return;
+  
+  HeartbeatMessage msg;
+  msg.messageType = MSG_HEARTBEAT;
+  msg.slaveId = 0;  // For future use
+  
+  esp_err_t result = esp_now_send(broadcastAddress, (uint8_t*)&msg, sizeof(msg));
+  
+  // Debug log every heartbeat for troubleshooting
+  Serial.print("Slave: Heartbeat sent (");
+  Serial.print(sizeof(msg));
+  Serial.print(" bytes) - ");
+  Serial.println(result == ESP_OK ? "OK" : "FAILED");
+}
+
+void handleTimerStateMessage(const TimerStateMessage *msg) {
+  // Slave receives timer state update from master
+  lastSyncReceived = millis();
+  
+  // Debug log (only print if state changed)
+  static uint8_t lastRound = 255;
+  static uint16_t lastSeconds = 0;
+  static bool lastRunning = false;
+  
+  bool stateChanged = (msg->currentRound != lastRound) || 
+                      (msg->remainingSeconds != lastSeconds) ||
+                      (msg->timerRunning != lastRunning);
+  
+  if (stateChanged) {
+    Serial.print("Slave RX: Round ");
+    Serial.print(msg->currentRound + 1);
+    Serial.print(", Time ");
+    Serial.print(msg->remainingSeconds);
+    Serial.print("s, ");
+    Serial.println(msg->timerRunning ? "RUNNING" : "PAUSED");
+    
+    lastRound = msg->currentRound;
+    lastSeconds = msg->remainingSeconds;
+    lastRunning = msg->timerRunning;
+  }
+  
+  // Update local state
+  currentRound = msg->currentRound;
+  remainingSeconds = msg->remainingSeconds;
+  timerRunning = msg->timerRunning;
+  
+  // Update display immediately on state change, otherwise throttle
+  // Skip update if already drawing (prevents race condition)
+  static unsigned long lastDisplayUpdate = 0;
+  if (!isDrawing && (stateChanged || (millis() - lastDisplayUpdate > 1000))) {
+    lastDisplayUpdate = millis();
+    drawTimerDisplay();
+  } else if (isDrawing) {
+    Serial.println("Slave: Skipping display update - already drawing");
+  }
+}
+
+void handleRoundConfigMessage(const RoundConfigMessage *msg) {
+  // Slave receives round configuration from master
+  if (msg->roundIndex >= MAX_ROUNDS) return;
+  
+  // Update total rounds if changed
+  if (msg->totalRounds != totalRounds) {
+    totalRounds = msg->totalRounds;
+  }
+  
+  // Update round configuration
+  rounds[msg->roundIndex].duration = msg->duration;
+  rounds[msg->roundIndex].smallBlind = msg->smallBlind;
+  rounds[msg->roundIndex].bigBlind = msg->bigBlind;
+  rounds[msg->roundIndex].ante = msg->ante;
+  rounds[msg->roundIndex].isBreak = msg->isBreak;
+  
+  Serial.print("Slave received config for round ");
+  Serial.println(msg->roundIndex + 1);
+}
+
+void handleHeartbeatMessage(const uint8_t *senderMac) {
+  // Master receives heartbeat from slave - just track it
+  // updateSlaveTracking already called in onESPNowDataRecv
+  static unsigned long lastLog = 0;
+  if (millis() - lastLog > 10000) {  // Log every 10 seconds
+    lastLog = millis();
+    Serial.print("Master: Heartbeat from ");
+    Serial.print(macToString(senderMac));
+    Serial.print(" - Total slaves: ");
+    Serial.println(getActiveSlaveCount());
+  }
+}
+
+bool isSyncConnected() {
+  if (deviceMode == MODE_STANDALONE || !espNowInitialized) {
+    return false;
+  }
+  
+  if (deviceMode == MODE_MASTER) {
+    return true;  // Master is always "connected"
+  }
+  
+  // Slave: check if we've received sync recently
+  return (millis() - lastSyncReceived) < SYNC_TIMEOUT;
 }
 
 void setup() {
@@ -1311,8 +1960,21 @@ void setup() {
   
   // Normal operation mode
   Serial.println(">>> Starting NORMAL OPERATION mode <<<");
+  
+  // IMPORTANT: Load preferences FIRST to get device mode
   loadRoundsFromPreferences();
   loadTimerState();
+  
+  // Initialize slave tracking array
+  for (int i = 0; i < MAX_TRACKED_SLAVES; i++) {
+    trackedSlaves[i].active = false;
+    trackedSlaves[i].configSynced = false;
+  }
+  activeSlaveCount = 0;
+  
+  // Initialize ESPNow AFTER loading device mode from preferences
+  initESPNow();
+  
   drawTimerDisplay();
 }
 
@@ -1461,15 +2123,49 @@ void loop() {
     // Normal timer operation
     handleTouch();
     
-    // Save state every 10 seconds
-    static unsigned long lastSave = 0;
-    if (millis() - lastSave > 10000) {
-      lastSave = millis();
-      saveTimerState();
+    // Save state every 10 seconds (master only, slaves sync from master)
+    if (deviceMode != MODE_SLAVE) {
+      static unsigned long lastSave = 0;
+      if (millis() - lastSave > 10000) {
+        lastSave = millis();
+        saveTimerState();
+      }
     }
     
-    // Update timer if running
-    if (timerRunning) {
+    // Master: Broadcast timer state every second and cleanup inactive slaves
+    if (deviceMode == MODE_MASTER && espNowInitialized) {
+      static unsigned long lastBroadcast = 0;
+      if (millis() - lastBroadcast > 1000) {
+        lastBroadcast = millis();
+        broadcastTimerState();
+      }
+      
+      // Cleanup inactive slaves every 5 seconds
+      static unsigned long lastCleanup = 0;
+      if (millis() - lastCleanup > 5000) {
+        lastCleanup = millis();
+        cleanupInactiveSlaves();
+      }
+      
+      // Sync round configs to new slaves every 2 seconds
+      static unsigned long lastConfigSync = 0;
+      if (millis() - lastConfigSync > 2000) {
+        lastConfigSync = millis();
+        syncSlaveConfigs();
+      }
+    }
+    
+    // Slave: Send heartbeat every 5 seconds
+    if (deviceMode == MODE_SLAVE && espNowInitialized) {
+      static unsigned long lastHeartbeat = 0;
+      if (millis() - lastHeartbeat > 5000) {
+        lastHeartbeat = millis();
+        sendHeartbeat();
+      }
+    }
+    
+    // Update timer if running (master only, slaves receive updates)
+    if (timerRunning && deviceMode != MODE_SLAVE) {
       unsigned long currentTime = millis();
       unsigned long elapsed = (currentTime - roundStartTime) / 1000;
       int newRemaining = startingSeconds - elapsed;
@@ -1503,6 +2199,11 @@ void loop() {
             roundStartTime = millis();
             timerRunning = true;
             saveTimerState();
+            
+            // Master: broadcast the round change
+            if (deviceMode == MODE_MASTER && espNowInitialized) {
+              broadcastTimerState();
+            }
           }
         }
         
