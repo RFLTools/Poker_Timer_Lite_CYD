@@ -163,4 +163,10 @@ Users should only install firmware from trusted sources.
 
 ## License
 
-Same license as the main project (see LICENSE file in project root).
+**NON-COMMERCIAL USE ONLY**
+
+This project is licensed for personal, non-commercial use only. Commercial use is strictly prohibited without explicit permission from the copyright holder.
+
+See the [LICENSE](../LICENSE) file in the project root for full terms.
+
+Copyright (c) 2026 Robert Livingston

@@ -277,7 +277,20 @@ This project was developed specifically for the CYD (ESP32-2432S028) hardware. T
 
 ## License
 
-Open source - free to use for personal and commercial purposes.
+**NON-COMMERCIAL USE ONLY**
+
+This software is licensed for personal, non-commercial use only. Commercial use is strictly prohibited without explicit permission.
+
+Key restrictions:
+- ❌ Cannot be sold or used in commercial products
+- ❌ Cannot be used in revenue-generating services
+- ❌ Cannot be used in business/commercial environments
+- ✅ Free for personal hobby projects
+- ✅ Free for educational purposes
+
+For commercial licensing inquiries, contact the copyright holder.
+
+See the [LICENSE](LICENSE) file for full terms.
 
 ## Acknowledgments
 

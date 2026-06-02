@@ -1,5 +1,13 @@
-// Poker Tournament Blind Timer
-// ESP32 CYD (Cheap Yellow Display) with ILI9341 Display and XPT2046 Touch
+/*
+ * Poker Tournament Blind Timer
+ * ESP32 CYD (Cheap Yellow Display) with ILI9341 Display and XPT2046 Touch
+ * 
+ * Copyright (c) 2026 Robert Livingston
+ * Licensed for NON-COMMERCIAL use only
+ * 
+ * This software may NOT be used for commercial purposes without permission.
+ * See LICENSE file for full terms.
+ */
 
 #include <Arduino.h>
 #include <SPI.h>

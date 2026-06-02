@@ -239,6 +239,18 @@ Once your web flasher is live:
 - [ ] Consider adding it to your GitHub repository description
 - [ ] Submit to ESP32 project directories/forums
 
+## License Notice
+
+**IMPORTANT:** This project is licensed for NON-COMMERCIAL use only.
+
+When sharing your web flasher:
+- ✅ Free for personal hobby projects
+- ✅ Free for educational purposes
+- ❌ Cannot be used commercially without permission
+- ❌ Cannot be sold or included in commercial products
+
+The license notice is displayed in the web flasher footer to ensure users are aware of these restrictions.
+
 ## Additional Resources
 
 - [ESP Web Tools Documentation](https://esphome.github.io/esp-web-tools/)
@@ -249,3 +261,5 @@ Once your web flasher is live:
 ---
 
 **Congratulations!** Your web flasher is now set up and ready to make firmware installation effortless for your users! 🎉
+
+**Remember:** This software is for non-commercial use only. See the LICENSE file for details.
