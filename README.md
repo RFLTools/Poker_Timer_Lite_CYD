@@ -44,7 +44,22 @@ A poker tournament blind timer for the ESP32-2432S028 "Cheap Yellow Display" (CY
 
 ## Quick Start
 
-### 1. Build & Upload
+### Option 1: Web Flasher (Easiest!)
+
+**No software installation required!** Flash directly from your browser:
+
+1. Visit **[https://rfltools.github.io/Poker_Timer_Lite_CYD/](https://rfltools.github.io/Poker_Timer_Lite_CYD/)**
+2. Connect your ESP32-2432S028 via USB
+3. Click "INSTALL POKER TIMER"
+4. Select your device's COM port
+5. Wait for installation to complete (~1-2 minutes)
+
+**Requirements:**
+- Chrome, Edge, or Opera browser (Web Serial API support)
+- USB cable to connect device
+- CP210x or CH340 USB driver (usually auto-installed)
+
+### Option 2: PlatformIO (Advanced)
 
 ```bash
 # In PlatformIO
@@ -200,14 +215,56 @@ Connect at **115200 baud** to see:
 - Round changes
 - Error messages
 
+## Web Flasher Development
+
+Want to build and host the web flasher yourself?
+
+### Building Locally
+
+```bash
+# 1. Build firmware with PlatformIO
+pio run --environment esp32-2432s028
+
+# 2. Copy binaries to web_flasher directory
+# Windows:
+.\build_web_flasher.ps1
+
+# Linux/Mac:
+chmod +x build_web_flasher.sh
+./build_web_flasher.sh
+
+# 3. Test locally
+cd web_flasher
+python -m http.server 8000
+# Open http://localhost:8000 in Chrome
+```
+
+### Automatic GitHub Pages Deployment
+
+The project includes a GitHub Actions workflow that:
+1. Automatically builds firmware on every push to main
+2. Deploys the web flasher to GitHub Pages
+3. Makes it available at: `https://yourusername.github.io/yourrepo/`
+
+See `.github/workflows/build.yml` and `web_flasher/README.md` for details.
+
 ## Project Structure
 
 ```
 Poker_Timer_CYD/
 ├── src/
 │   └── main.cpp              # Main application code
+├── web_flasher/              # Web-based firmware flasher
+│   ├── index.html            # Flasher web interface
+│   ├── manifest.json         # ESP Web Tools manifest
+│   └── README.md             # Web flasher documentation
+├── .github/
+│   └── workflows/
+│       └── build.yml         # CI/CD for web flasher
 ├── platformio.ini            # Build configuration
 ├── no_ota.csv               # Partition table
+├── build_web_flasher.ps1    # Windows build script
+├── build_web_flasher.sh     # Linux/Mac build script
 ├── README.md                # This file
 ├── README_CYD.md            # Detailed CYD information
 ├── CONFIG_MODE_NEW.md       # Config mode documentation

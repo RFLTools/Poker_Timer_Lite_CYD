@@ -1,0 +1,428 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Poker Timer CYD - Web Installer</title>
+    <script type="module" src="https://unpkg.com/esp-web-tools@10/dist/web/install-button.js?module"></script>
+    <style>
+        :root {
+            --primary-color: #2196F3;
+            --success-color: #4CAF50;
+            --danger-color: #f44336;
+            --bg-dark: #1a1a1a;
+            --bg-light: #2d2d2d;
+            --text-light: #ffffff;
+            --text-muted: #b0b0b0;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 800px;
+            width: 100%;
+            background: var(--bg-light);
+            border-radius: 16px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+            overflow: hidden;
+        }
+
+        .header {
+            background: var(--bg-dark);
+            padding: 40px;
+            text-align: center;
+            border-bottom: 3px solid var(--primary-color);
+        }
+
+        .header h1 {
+            color: var(--text-light);
+            font-size: 2.5em;
+            margin-bottom: 10px;
+            font-weight: 700;
+        }
+
+        .header .subtitle {
+            color: var(--text-muted);
+            font-size: 1.1em;
+        }
+
+        .content {
+            padding: 40px;
+        }
+
+        .info-card {
+            background: var(--bg-dark);
+            border-radius: 12px;
+            padding: 30px;
+            margin-bottom: 30px;
+            border-left: 4px solid var(--primary-color);
+        }
+
+        .info-card h2 {
+            color: var(--text-light);
+            font-size: 1.5em;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .info-card p {
+            color: var(--text-muted);
+            line-height: 1.6;
+            margin-bottom: 10px;
+        }
+
+        .features {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-top: 20px;
+        }
+
+        .feature {
+            background: rgba(33, 150, 243, 0.1);
+            padding: 15px;
+            border-radius: 8px;
+            border: 1px solid rgba(33, 150, 243, 0.2);
+        }
+
+        .feature-icon {
+            font-size: 1.5em;
+            margin-bottom: 8px;
+        }
+
+        .feature-title {
+            color: var(--text-light);
+            font-weight: 600;
+            font-size: 0.95em;
+            margin-bottom: 5px;
+        }
+
+        .feature-desc {
+            color: var(--text-muted);
+            font-size: 0.85em;
+        }
+
+        .install-section {
+            text-align: center;
+            margin: 40px 0;
+            padding: 40px;
+            background: var(--bg-dark);
+            border-radius: 12px;
+        }
+
+        .install-section h2 {
+            color: var(--text-light);
+            margin-bottom: 20px;
+            font-size: 1.8em;
+        }
+
+        esp-web-install-button {
+            margin: 20px 0;
+        }
+
+        .install-button {
+            display: inline-block;
+            --esp-tools-button-color: var(--primary-color);
+            --esp-tools-button-text-color: white;
+        }
+
+        .requirements {
+            background: rgba(244, 67, 54, 0.1);
+            border: 1px solid rgba(244, 67, 54, 0.3);
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px 0;
+        }
+
+        .requirements h3 {
+            color: var(--danger-color);
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .requirements ul {
+            color: var(--text-muted);
+            margin-left: 20px;
+            line-height: 1.8;
+        }
+
+        .steps {
+            background: var(--bg-dark);
+            border-radius: 12px;
+            padding: 30px;
+            margin-top: 30px;
+        }
+
+        .steps h3 {
+            color: var(--text-light);
+            margin-bottom: 20px;
+            font-size: 1.3em;
+        }
+
+        .step {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 20px;
+            padding: 15px;
+            background: rgba(33, 150, 243, 0.05);
+            border-radius: 8px;
+        }
+
+        .step-number {
+            flex-shrink: 0;
+            width: 35px;
+            height: 35px;
+            background: var(--primary-color);
+            color: white;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+        }
+
+        .step-content {
+            flex: 1;
+        }
+
+        .step-title {
+            color: var(--text-light);
+            font-weight: 600;
+            margin-bottom: 5px;
+        }
+
+        .step-desc {
+            color: var(--text-muted);
+            font-size: 0.9em;
+        }
+
+        .footer {
+            background: var(--bg-dark);
+            padding: 20px;
+            text-align: center;
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .footer a {
+            color: var(--primary-color);
+            text-decoration: none;
+            font-weight: 600;
+        }
+
+        .footer a:hover {
+            text-decoration: underline;
+        }
+
+        @media (max-width: 600px) {
+            .header h1 {
+                font-size: 1.8em;
+            }
+
+            .content {
+                padding: 20px;
+            }
+
+            .features {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 4px 12px;
+            background: var(--primary-color);
+            color: white;
+            border-radius: 12px;
+            font-size: 0.75em;
+            font-weight: 600;
+            margin-left: 10px;
+        }
+
+        .hardware-image {
+            width: 100%;
+            max-width: 400px;
+            margin: 20px auto;
+            display: block;
+            border-radius: 8px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🎰 Poker Timer CYD</h1>
+            <p class="subtitle">Web-Based Firmware Installer</p>
+            <span class="badge">ESP32-2432S028</span>
+        </div>
+
+        <div class="content">
+            <div class="info-card">
+                <h2>📱 About This Device</h2>
+                <p>
+                    A professional poker tournament blind timer designed for the ESP32-2432S028 
+                    "Cheap Yellow Display" (CYD) with touchscreen interface. Perfect for managing 
+                    poker tournaments with customizable blinds, automatic progression, and audio alerts.
+                </p>
+                
+                <div class="features">
+                    <div class="feature">
+                        <div class="feature-icon">⏱️</div>
+                        <div class="feature-title">25 Rounds</div>
+                        <div class="feature-desc">Fully configurable tournament structure</div>
+                    </div>
+                    <div class="feature">
+                        <div class="feature-icon">📱</div>
+                        <div class="feature-title">Touch Control</div>
+                        <div class="feature-desc">Intuitive touchscreen interface</div>
+                    </div>
+                    <div class="feature">
+                        <div class="feature-icon">🌐</div>
+                        <div class="feature-title">WiFi Setup</div>
+                        <div class="feature-desc">Web-based configuration</div>
+                    </div>
+                    <div class="feature">
+                        <div class="feature-icon">💾</div>
+                        <div class="feature-title">Auto-Save</div>
+                        <div class="feature-desc">Persistent storage & resume</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="requirements">
+                <h3>⚠️ Before You Start</h3>
+                <ul>
+                    <li><strong>Required Hardware:</strong> ESP32-2432S028 (CYD - Cheap Yellow Display)</li>
+                    <li><strong>Browser:</strong> Chrome, Edge, or Opera (Web Serial API support required)</li>
+                    <li><strong>Cable:</strong> USB cable to connect your device</li>
+                    <li><strong>Driver:</strong> CP210x or CH340 USB driver may be needed</li>
+                </ul>
+            </div>
+
+            <div class="install-section">
+                <h2>🚀 Install Firmware</h2>
+                <p style="color: var(--text-muted); margin-bottom: 20px;">
+                    Click the button below to connect your ESP32 device and install the firmware.
+                </p>
+                
+                <esp-web-install-button class="install-button" manifest="./manifest.json">
+                    <button slot="activate" style="
+                        background: var(--primary-color);
+                        color: white;
+                        border: none;
+                        padding: 15px 40px;
+                        font-size: 1.1em;
+                        font-weight: 600;
+                        border-radius: 8px;
+                        cursor: pointer;
+                        box-shadow: 0 4px 12px rgba(33, 150, 243, 0.4);
+                        transition: all 0.3s ease;
+                    " onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 6px 16px rgba(33, 150, 243, 0.5)';" 
+                       onmouseout="this.style.transform=''; this.style.boxShadow='0 4px 12px rgba(33, 150, 243, 0.4)';">
+                        INSTALL POKER TIMER
+                    </button>
+                </esp-web-install-button>
+
+                <p style="color: var(--text-muted); font-size: 0.9em; margin-top: 15px;">
+                    This will erase the existing firmware and install the Poker Timer application
+                </p>
+            </div>
+
+            <div class="steps">
+                <h3>📋 Installation Steps</h3>
+                
+                <div class="step">
+                    <div class="step-number">1</div>
+                    <div class="step-content">
+                        <div class="step-title">Connect Device</div>
+                        <div class="step-desc">
+                            Connect your ESP32-2432S028 to your computer using a USB cable
+                        </div>
+                    </div>
+                </div>
+
+                <div class="step">
+                    <div class="step-number">2</div>
+                    <div class="step-content">
+                        <div class="step-title">Click Install Button</div>
+                        <div class="step-desc">
+                            Click "INSTALL POKER TIMER" and select your device from the popup
+                        </div>
+                    </div>
+                </div>
+
+                <div class="step">
+                    <div class="step-number">3</div>
+                    <div class="step-content">
+                        <div class="step-title">Wait for Installation</div>
+                        <div class="step-desc">
+                            The firmware will be uploaded automatically (takes ~1-2 minutes)
+                        </div>
+                    </div>
+                </div>
+
+                <div class="step">
+                    <div class="step-number">4</div>
+                    <div class="step-content">
+                        <div class="step-title">Configure & Play</div>
+                        <div class="step-desc">
+                            Tap the gear icon on the device to configure WiFi and customize tournament settings
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="info-card" style="margin-top: 30px;">
+                <h2>❓ Troubleshooting</h2>
+                <p><strong>Port not showing up?</strong></p>
+                <ul style="color: var(--text-muted); margin-left: 20px; margin-bottom: 15px;">
+                    <li>Install the CP210x or CH340 USB driver for your operating system</li>
+                    <li>Try a different USB cable (some cables are power-only)</li>
+                    <li>Try a different USB port on your computer</li>
+                </ul>
+                
+                <p><strong>Installation failed?</strong></p>
+                <ul style="color: var(--text-muted); margin-left: 20px;">
+                    <li>Hold the BOOT button while connecting the USB cable</li>
+                    <li>Try again with a different browser (Chrome or Edge)</li>
+                    <li>Ensure no other program is using the serial port</li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="footer">
+            <p style="color: var(--text-muted); margin-bottom: 10px;">
+                Open Source Project
+            </p>
+            <a href="https://github.com/RFLTools/Poker_Timer_Lite_CYD" target="_blank">
+                View on GitHub
+            </a>
+        </div>
+    </div>
+
+    <script>
+        // Add event listener for installation events
+        document.querySelector('esp-web-install-button')
+            .addEventListener('state-changed', (ev) => {
+                console.log('State changed:', ev.detail);
+            });
+    </script>
+</body>
+</html>

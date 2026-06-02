@@ -1,0 +1,81 @@
+name: Build and Deploy Web Flasher
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Cache pip
+      uses: actions/cache@v4
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
+          
+    - name: Cache PlatformIO
+      uses: actions/cache@v4
+      with:
+        path: ~/.platformio
+        key: ${{ runner.os }}-pio-${{ hashFiles('**/platformio.ini') }}
+        restore-keys: |
+          ${{ runner.os }}-pio-
+          
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+        
+    - name: Install PlatformIO
+      run: |
+        python -m pip install --upgrade pip
+        pip install platformio
+        
+    - name: Build firmware
+      run: |
+        pio run --environment esp32-2432s028
+        
+    - name: Prepare web flasher files
+      run: |
+        mkdir -p web_flasher_dist
+        cp web_flasher/index.html web_flasher_dist/
+        cp web_flasher/manifest.json web_flasher_dist/
+        cp .pio/build/esp32-2432s028/firmware.bin web_flasher_dist/
+        cp .pio/build/esp32-2432s028/bootloader.bin web_flasher_dist/
+        cp .pio/build/esp32-2432s028/partitions.bin web_flasher_dist/
+        # Get boot_app0.bin from ESP32 tools
+        cp ~/.platformio/packages/framework-arduinoespressif32/tools/partitions/boot_app0.bin web_flasher_dist/ || echo "boot_app0.bin not found, will be created"
+        
+    - name: Create boot_app0.bin if missing
+      run: |
+        if [ ! -f web_flasher_dist/boot_app0.bin ]; then
+          python -c "import os; f=open('web_flasher_dist/boot_app0.bin','wb'); f.write(b'\xff'*0x1000); f.close()"
+        fi
+        
+    - name: List files
+      run: |
+        ls -lh web_flasher_dist/
+        
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: web-flasher
+        path: web_flasher_dist/
+        
+    - name: Deploy to GitHub Pages
+      if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+      uses: peaceiris/actions-gh-pages@v4
+      with:
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+        publish_dir: ./web_flasher_dist
+        force_orphan: true
