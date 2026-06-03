@@ -1183,6 +1183,13 @@ void handleTouch() {
   if (isTouchInButton(x, y, btnConfig)) {
     Serial.println("Config button pressed");
     
+    // Wait for touch release to prevent false triggers
+    while (ts.touched()) {
+      delay(10);
+    }
+    delay(300); // Extra delay to ensure touch is fully released
+    Serial.println("Touch released, showing config screen");
+    
     // Save timer state before showing confirmation dialog
     bool wasRunning = timerRunning;
     unsigned long pausedAt = millis();
@@ -1199,30 +1206,50 @@ void handleTouch() {
     
     // Show confirmation screen (landscape)
     tft.fillScreen(TFT_BLACK);
+    
+    // Draw three reboot mode buttons at top
+    tft.setTextSize(1);
+    tft.setTextColor(TFT_BLACK);
+    
+    // Standalone button (left)
+    tft.fillRoundRect(5, 5, 100, 30, 6, TFT_CYAN);
+    tft.setCursor(15, 13);
+    tft.println("Standalone");
+    
+    // Master button (center)
+    tft.fillRoundRect(110, 5, 100, 30, 6, TFT_MAGENTA);
+    tft.setCursor(132, 13);
+    tft.println("Master");
+    
+    // Slave button (right)
+    tft.fillRoundRect(215, 5, 100, 30, 6, TFT_ORANGE);
+    tft.setCursor(240, 13);
+    tft.println("Slave");
+    
     tft.setTextSize(2);
     tft.setTextColor(TFT_YELLOW);
-    tft.setCursor(70, 40);
+    tft.setCursor(70, 50);
     tft.println("Enter Config");
-    tft.setCursor(100, 70);
+    tft.setCursor(100, 80);
     tft.println("Mode?");
     
     tft.setTextSize(1);
     tft.setTextColor(TFT_WHITE);
-    tft.setCursor(60, 100);
+    tft.setCursor(60, 110);
     tft.println("This will start WiFi AP");
-    tft.setCursor(60, 115);
+    tft.setCursor(60, 125);
     tft.println("and pause the timer.");
     
     // Draw YES/NO buttons (landscape)
-    tft.fillRoundRect(60, 150, 90, 50, 8, TFT_GREEN);
-    tft.fillRoundRect(170, 150, 90, 50, 8, TFT_RED);
+    tft.fillRoundRect(60, 165, 90, 50, 8, TFT_GREEN);
+    tft.fillRoundRect(170, 165, 90, 50, 8, TFT_RED);
     
     tft.setTextSize(2);
     tft.setTextColor(TFT_BLACK);
-    tft.setCursor(80, 165);
+    tft.setCursor(80, 180);
     tft.println("YES");
     tft.setTextColor(TFT_WHITE);
-    tft.setCursor(195, 165);
+    tft.setCursor(195, 180);
     tft.println("NO");
     
     // Wait for confirmation (10 second timeout)
@@ -1237,15 +1264,60 @@ void handleTouch() {
         int x2 = map(p2.x, 200, 3700, 0, SCREEN_WIDTH);
         int y2 = map(p2.y, 240, 3800, 0, SCREEN_HEIGHT);
         
+        Serial.print("Config screen touch: x2=");
+        Serial.print(x2);
+        Serial.print(" y2=");
+        Serial.println(y2);
+        
+        // Check reboot mode buttons at top
+        if (y2 >= 5 && y2 <= 35) {
+          Serial.println("Touch in top button area");
+          // Standalone button (left)
+          if (x2 >= 5 && x2 <= 105) {
+            Serial.println("STANDALONE BUTTON PRESSED");
+            playButtonBeep();
+            Serial.println("Rebooting into Standalone mode");
+            deviceMode = MODE_STANDALONE;
+            saveRoundsToPreferences();
+            delay(500);
+            ESP.restart();
+          }
+          // Master button (center)
+          else if (x2 >= 110 && x2 <= 210) {
+            Serial.println("MASTER BUTTON PRESSED");
+            playButtonBeep();
+            Serial.println("Rebooting into Master mode");
+            deviceMode = MODE_MASTER;
+            saveRoundsToPreferences();
+            delay(500);
+            ESP.restart();
+          }
+          // Slave button (right)
+          else if (x2 >= 215 && x2 <= 315) {
+            Serial.println("SLAVE BUTTON PRESSED");
+            playButtonBeep();
+            Serial.println("Rebooting into Slave mode");
+            deviceMode = MODE_SLAVE;
+            saveRoundsToPreferences();
+            delay(500);
+            ESP.restart();
+          }
+          else {
+            Serial.println("Touch in top area but not on any button");
+          }
+        }
         // Check YES button (left) - landscape coords
-        if (x2 >= 60 && x2 <= 150 && y2 >= 150 && y2 <= 200) {
+        else if (x2 >= 60 && x2 <= 150 && y2 >= 165 && y2 <= 215) {
           confirmed = true;
           Serial.println("Config mode confirmed");
         }
         // Check NO button (right) - landscape coords
-        else if (x2 >= 170 && x2 <= 260 && y2 >= 150 && y2 <= 200) {
+        else if (x2 >= 170 && x2 <= 260 && y2 >= 165 && y2 <= 215) {
           cancelled = true;
           Serial.println("Config mode cancelled");
+        }
+        else {
+          Serial.println("Touch not on any recognized button");
         }
         
         // Wait for release
