@@ -559,6 +559,57 @@ String generateConfigHTML() {
       align-items: center;
       gap: 8px;
     }
+     .import-export {
+      background: #e3f2fd;
+      padding: 15px;
+      margin-bottom: 20px;
+      border-radius: 8px;
+      border-left: 4px solid #2196f3;
+    }
+    .import-export h2 {
+      font-size: 16px;
+      color: #2196f3;
+      margin-bottom: 10px;
+    }
+    .import-export-buttons {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 10px;
+      margin-top: 10px;
+    }
+    .btn-export, .btn-import, .btn-reset {
+      padding: 10px;
+      font-size: 14px;
+      font-weight: bold;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.3s;
+    }
+    .btn-export {
+      background: #2196f3;
+      color: white;
+    }
+    .btn-export:active {
+      background: #1976d2;
+    }
+    .btn-import {
+      background: #ff9800;
+      color: white;
+    }
+    .btn-import:active {
+      background: #f57c00;
+    }
+    .btn-reset {
+      background: #9e9e9e;
+      color: white;
+    }
+    .btn-reset:active {
+      background: #757575;
+    }
+    #fileInput {
+      display: none;
+    }
     .buttons {
       display: grid;
       grid-template-columns: 1fr 1fr;
@@ -615,6 +666,16 @@ String generateConfigHTML() {
         <div class="mode-info" id="modeInfo">
           Select device synchronization mode using ESPNow.
         </div>
+       </div>
+       
+       <div class="import-export">
+        <h2>💾 Import / Export Configuration</h2>
+        <div class="import-export-buttons">
+          <button type="button" class="btn-export" onclick="exportConfig()">Export</button>
+          <button type="button" class="btn-import" onclick="document.getElementById('fileInput').click()">Import</button>
+          <button type="button" class="btn-reset" onclick="resetToDefaults()">Reset Defaults</button>
+        </div>
+        <input type="file" id="fileInput" accept=".json" onchange="importConfig(event)">
       </div>
 )rawliteral";
 
@@ -622,16 +683,12 @@ String generateConfigHTML() {
   for (int i = 0; i < totalRounds; i++) {
     html += "<div class='round";
     if (rounds[i].isBreak) html += " break";
-    html += "'><div class='round-header'><span>";
+    html += "' id='round" + String(i) + "'><div class='round-header'><span>";
     
-    if (rounds[i].isBreak) {
-      html += "BREAK ";
-    } else {
-      html += "Round ";
-    }
+    html += "Round ";
     html += String(i + 1);
     html += "</span><div class='checkbox-group'><label style='margin:0'>Break?</label>";
-    html += "<input type='checkbox' name='brk" + String(i) + "' " + 
+    html += "<input type='checkbox' name='brk" + String(i) + "' onchange='toggleBreakStyle(" + String(i) + ")' " + 
             (rounds[i].isBreak ? "checked" : "") + "></div></div>";
     
     html += "<div class='form-row'>";
@@ -678,6 +735,18 @@ String generateConfigHTML() {
     // Set initial description
     modeInfo.textContent = modeDescriptions[deviceModeSelect.value];
     
+    // Toggle break style when checkbox changes
+    function toggleBreakStyle(index) {
+      const roundDiv = document.getElementById('round' + index);
+      const checkbox = document.querySelector('[name="brk' + index + '"]');
+      
+      if (checkbox.checked) {
+        roundDiv.classList.add('break');
+      } else {
+        roundDiv.classList.remove('break');
+      }
+    }
+    
     document.getElementById('configForm').onsubmit = async (e) => {
       e.preventDefault();
       const formData = new FormData(e.target);
@@ -710,6 +779,122 @@ String generateConfigHTML() {
           alert('Rebooting...');
         });
       }
+    }
+    
+    // Export configuration to JSON file
+    function exportConfig() {
+      const formData = new FormData(document.getElementById('configForm'));
+      const config = {
+        version: '1.0',
+        exportDate: new Date().toISOString(),
+        deviceMode: formData.get('deviceMode'),
+        rounds: []
+      };
+      
+      // Collect all round data
+      for (let i = 0; i < 25; i++) {
+        const round = {
+          duration: parseInt(formData.get('dur' + i)),
+          smallBlind: parseInt(formData.get('sb' + i)),
+          bigBlind: parseInt(formData.get('bb' + i)),
+          ante: parseInt(formData.get('ante' + i)),
+          isBreak: formData.get('brk' + i) ? true : false
+        };
+        config.rounds.push(round);
+      }
+      
+      // Create and download JSON file
+      const json = JSON.stringify(config, null, 2);
+      const blob = new Blob([json], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'poker_timer_config_' + new Date().toISOString().split('T')[0] + '.json';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      
+      alert('Configuration exported successfully!');
+    }
+    
+    // Import configuration from JSON file
+    function importConfig(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+      
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        try {
+          const config = JSON.parse(e.target.result);
+          
+          // Validate configuration
+          if (!config.rounds || !Array.isArray(config.rounds)) {
+            throw new Error('Invalid configuration format');
+          }
+          
+          // Apply configuration to form
+          if (config.deviceMode !== undefined) {
+            document.querySelector('[name="deviceMode"]').value = config.deviceMode;
+            document.getElementById('deviceMode').dispatchEvent(new Event('change'));
+          }
+          
+          config.rounds.forEach((round, i) => {
+            if (i < 25) {
+              document.querySelector('[name="dur' + i + '"]').value = round.duration || 15;
+              document.querySelector('[name="sb' + i + '"]').value = round.smallBlind || 0;
+              document.querySelector('[name="bb' + i + '"]').value = round.bigBlind || 0;
+              document.querySelector('[name="ante' + i + '"]').value = round.ante || 0;
+              document.querySelector('[name="brk' + i + '"]').checked = round.isBreak || false;
+              toggleBreakStyle(i); // Update visual styling
+            }
+          });
+          
+          alert('Configuration imported successfully! Review and click Save to apply.');
+        } catch (err) {
+          alert('Error importing configuration: ' + err.message);
+        }
+      };
+      reader.readAsText(file);
+      
+      // Reset file input so the same file can be imported again
+      event.target.value = '';
+    }
+    
+    // Reset to default configuration
+    function resetToDefaults() {
+      if (!confirm('Reset to default blinds/breaks configuration? This will overwrite current values.')) {
+        return;
+      }
+      
+      // Default blinds structure (matches initializeDefaultRounds in C++)
+      const blinds = [25, 50, 75, 100, 150, 200, 300, 400, 500, 600, 
+                      800, 1000, 1500, 2000, 3000, 4000, 5000, 6000, 
+                      8000, 10000, 12000, 15000, 20000, 25000, 30000];
+      
+      let roundIndex = 0;
+      for (let i = 0; i < 25; i++) {
+        // Every 4th position is a break (after 3 rounds of play)
+        const isBreak = (i + 1) % 4 === 0 && i > 0;
+        
+        document.querySelector('[name="dur' + i + '"]').value = 15;
+        
+        if (isBreak) {
+          document.querySelector('[name="sb' + i + '"]').value = 0;
+          document.querySelector('[name="bb' + i + '"]').value = 0;
+          document.querySelector('[name="ante' + i + '"]').value = 0;
+          document.querySelector('[name="brk' + i + '"]').checked = true;
+        } else {
+          document.querySelector('[name="sb' + i + '"]').value = blinds[roundIndex];
+          document.querySelector('[name="bb' + i + '"]').value = blinds[roundIndex] * 2;
+          document.querySelector('[name="ante' + i + '"]').value = 0;
+          document.querySelector('[name="brk' + i + '"]').checked = false;
+          roundIndex++;
+        }
+        toggleBreakStyle(i); // Update visual styling
+      }
+      
+      alert('Reset to defaults! Review and click Save to apply.');
     }
   </script>
 </body>
