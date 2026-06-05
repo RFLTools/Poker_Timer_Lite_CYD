@@ -56,7 +56,8 @@ enum DeviceMode {
 enum MessageType {
   MSG_TIMER_STATE = 1,      // Master broadcasts current timer state
   MSG_ROUND_CONFIG = 2,     // Master broadcasts round configuration
-  MSG_HEARTBEAT = 3         // Slave sends heartbeat to master
+  MSG_HEARTBEAT = 3,        // Slave sends heartbeat to master
+  MSG_BEEP = 4              // Master tells slaves to beep
 };
 
 // Heartbeat message (sent by slave every 5 seconds)
@@ -86,7 +87,11 @@ struct RoundConfigMessage {
   uint8_t totalRounds;      // Total number of rounds
 };
 
-
+// ESPNow beep command message (sent by master to trigger beeps on slaves)
+struct BeepMessage {
+  uint8_t messageType;      // MSG_BEEP
+  uint8_t beepType;         // 0=button, 1=countdown warning, 2=start/stop
+};
 
 // ESPNow state
 DeviceMode deviceMode = MODE_STANDALONE;
@@ -178,11 +183,13 @@ void onESPNowDataRecv(const uint8_t *mac_addr, const uint8_t *data, int data_len
 void broadcastTimerState();
 void broadcastRoundConfig(int roundIndex);
 void broadcastAllRoundConfigs();
+void broadcastBeep(uint8_t beepType);
 void syncSlaveConfigs();
 void sendHeartbeat();
 void handleTimerStateMessage(const TimerStateMessage *msg);
 void handleRoundConfigMessage(const RoundConfigMessage *msg);
 void handleHeartbeatMessage(const uint8_t *senderMac);
+void handleBeepMessage(const BeepMessage *msg);
 bool isSyncConnected();
 void updateSlaveTracking(const uint8_t *macAddr);
 void cleanupInactiveSlaves();
@@ -1573,6 +1580,7 @@ void handleTouch() {
       // Master broadcasts the change
       if (deviceMode == MODE_MASTER && espNowInitialized) {
         broadcastTimerState();
+        broadcastBeep(2);  // Send beep command to slaves (start/stop beep)
       }
       
       drawTimerDisplay();
@@ -1658,6 +1666,7 @@ void handleTouch() {
         // Master broadcasts the change
         if (deviceMode == MODE_MASTER && espNowInitialized) {
           broadcastTimerState();
+          broadcastBeep(2);  // Send beep command to slaves (confirmation beep)
         }
       }
       
@@ -1744,6 +1753,7 @@ void handleTouch() {
         // Master broadcasts the change
         if (deviceMode == MODE_MASTER && espNowInitialized) {
           broadcastTimerState();
+          broadcastBeep(2);  // Send beep command to slaves (confirmation beep)
         }
       }
       
@@ -1905,6 +1915,10 @@ void onESPNowDataRecv(const uint8_t *mac_addr, const uint8_t *data, int data_len
     if (data_len == sizeof(RoundConfigMessage)) {
       handleRoundConfigMessage((const RoundConfigMessage*)data);
     }
+  } else if (messageType == MSG_BEEP && deviceMode == MODE_SLAVE) {
+    if (data_len == sizeof(BeepMessage)) {
+      handleBeepMessage((const BeepMessage*)data);
+    }
   } else if (messageType == MSG_HEARTBEAT && deviceMode == MODE_MASTER) {
     Serial.print("Master: Received MSG_HEARTBEAT, size ");
     Serial.print(data_len);
@@ -2052,6 +2066,19 @@ void handleTimerStateMessage(const TimerStateMessage *msg) {
   
   // Update local state
   currentRound = msg->currentRound;
+  
+  // Check if we need to beep for countdown warning (5-4-3-2-1 seconds)
+  // Only beep when remainingSeconds changes to one of these values
+  if (msg->timerRunning && msg->remainingSeconds >= 1 && msg->remainingSeconds <= 5) {
+    if (remainingSeconds != msg->remainingSeconds) {
+      // Beep 3 times for countdown warning
+      for (int i = 0; i < 3; i++) {
+        playBeep(1500, 200);  // 1.5kHz for 200ms
+        delay(100);
+      }
+    }
+  }
+  
   remainingSeconds = msg->remainingSeconds;
   timerRunning = msg->timerRunning;
   
@@ -2096,6 +2123,43 @@ void handleHeartbeatMessage(const uint8_t *senderMac) {
     Serial.print(macToString(senderMac));
     Serial.print(" - Total slaves: ");
     Serial.println(getActiveSlaveCount());
+  }
+}
+
+void broadcastBeep(uint8_t beepType) {
+  if (!espNowInitialized || deviceMode != MODE_MASTER) return;
+  
+  BeepMessage msg;
+  msg.messageType = MSG_BEEP;
+  msg.beepType = beepType;
+  
+  esp_err_t result = esp_now_send(broadcastAddress, (uint8_t*)&msg, sizeof(msg));
+  
+  Serial.print("Master: Broadcasting beep command (type ");
+  Serial.print(beepType);
+  Serial.print(") - ");
+  Serial.println(result == ESP_OK ? "OK" : "FAILED");
+}
+
+void handleBeepMessage(const BeepMessage *msg) {
+  // Slave receives beep command from master
+  Serial.print("Slave: Received beep command (type ");
+  Serial.print(msg->beepType);
+  Serial.println(")");
+  
+  // Play the appropriate beep
+  if (msg->beepType == 0) {
+    // Button beep
+    playButtonBeep();
+  } else if (msg->beepType == 1) {
+    // Countdown warning (3 beeps)
+    for (int i = 0; i < 3; i++) {
+      playBeep(1500, 200);  // 1.5kHz for 200ms
+      delay(100);
+    }
+  } else if (msg->beepType == 2) {
+    // Start/stop or confirmation beep
+    playButtonBeep();
   }
 }
 
