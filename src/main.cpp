@@ -101,6 +101,7 @@ unsigned long lastSyncReceived = 0;
 const unsigned long SYNC_TIMEOUT = 5000;  // 5 seconds without sync = disconnected
 bool slaveShowNextRound = true;  // For slaves: toggle next round visibility (start with next round shown)
 bool isDrawing = false;  // Prevent re-entrant calls to drawTimerDisplay
+bool inSettingsScreen = false;  // Prevent timer updates from overwriting settings/mode selection screen
 
 // Slave tracking (for master to know which slaves are active)
 #define MAX_TRACKED_SLAVES 10
@@ -1375,6 +1376,9 @@ void handleTouch() {
   if (isTouchInButton(x, y, btnConfig)) {
     Serial.println("Config button pressed");
     
+    // Set flag to prevent timer updates from overwriting this screen
+    inSettingsScreen = true;
+    
     // Wait for touch release to prevent false triggers
     while (ts.touched()) {
       delay(10);
@@ -1525,6 +1529,7 @@ void handleTouch() {
       // Enter config mode
       Serial.println("Entering config mode...");
       loadRoundsFromPreferences();
+      inSettingsScreen = false;  // Clear flag before entering config mode
       startConfigMode();
       return; // Don't redraw timer screen
     } else {
@@ -1542,6 +1547,7 @@ void handleTouch() {
       Serial.print(", remaining=");
       Serial.println(remainingSeconds);
       
+      inSettingsScreen = false;  // Clear flag before redrawing timer
       drawTimerDisplay();
     }
   }
@@ -2084,8 +2090,11 @@ void handleTimerStateMessage(const TimerStateMessage *msg) {
   
   // Update display immediately on state change, otherwise throttle
   // Skip update if already drawing (prevents race condition)
+  // Skip update if in settings screen (prevents overwriting mode selection)
   static unsigned long lastDisplayUpdate = 0;
-  if (!isDrawing && (stateChanged || (millis() - lastDisplayUpdate > 1000))) {
+  if (inSettingsScreen) {
+    Serial.println("Slave: Skipping display update - in settings screen");
+  } else if (!isDrawing && (stateChanged || (millis() - lastDisplayUpdate > 1000))) {
     lastDisplayUpdate = millis();
     drawTimerDisplay();
   } else if (isDrawing) {
