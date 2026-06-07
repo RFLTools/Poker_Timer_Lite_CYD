@@ -131,6 +131,7 @@ TouchButton btnStartPause = {10, 10, 70, 60, "START", TFT_GREEN, TFT_BLACK};  //
 TouchButton btnNext = {10, 80, 70, 60, "NEXT", TFT_BLUE, TFT_WHITE};          // Middle left
 TouchButton btnPrev = {10, 150, 70, 60, "PREV", TFT_ORANGE, TFT_BLACK};       // Bottom left
 TouchButton btnConfig = {280, 5, 30, 30, "CFG", TFT_DARKGREY, TFT_WHITE};     // Config button top right
+TouchButton btnMute = {280, 205, 30, 30, "MUT", TFT_DARKGREY, TFT_WHITE};     // Mute button bottom right
 TouchButton btnCancelConfig = {110, 185, 120, 50, "CANCEL", TFT_RED, TFT_WHITE}; // Cancel button for config mode
 
 // Round structure
@@ -159,6 +160,9 @@ bool configMode = false;
 // Touch debouncing
 unsigned long lastTouch = 0;
 const unsigned long TOUCH_DEBOUNCE = 250;
+
+// Mute state
+bool isMuted = false;
 
 // Function prototypes
 void initializeDefaultRounds();
@@ -914,6 +918,8 @@ String generateConfigHTML() {
 
 // Buzzer functions
 void playBeep(int frequency, int duration) {
+  if (isMuted) return;  // Don't play sound if muted
+  
   ledcSetup(0, frequency, 8);  // Channel 0, 8-bit resolution
   ledcAttachPin(BUZZER_PIN, 0);
   ledcWrite(0, 128);  // 50% duty cycle for loud sound
@@ -1325,6 +1331,38 @@ void drawTimerDisplay() {
     }
   }
   
+  // Draw mute button in bottom right corner
+  tft.fillRoundRect(btnMute.x, btnMute.y, btnMute.w, btnMute.h, 8, btnMute.color);
+  
+  // Draw speaker icon
+  int centerX = btnMute.x + 15;
+  int centerY = btnMute.y + 15;
+  
+  if (isMuted) {
+    // Draw muted speaker (speaker with X)
+    // Speaker cone
+    tft.fillTriangle(centerX - 5, centerY - 4, centerX - 5, centerY + 4, centerX - 1, centerY + 2, TFT_WHITE);
+    tft.fillTriangle(centerX - 5, centerY - 4, centerX - 5, centerY + 4, centerX - 1, centerY - 2, TFT_WHITE);
+    // Speaker box
+    tft.fillRect(centerX - 8, centerY - 2, 3, 4, TFT_WHITE);
+    // X mark to indicate muted
+    tft.drawLine(centerX + 2, centerY - 4, centerX + 8, centerY + 4, TFT_RED);
+    tft.drawLine(centerX + 2, centerY + 4, centerX + 8, centerY - 4, TFT_RED);
+    tft.drawLine(centerX + 3, centerY - 4, centerX + 9, centerY + 4, TFT_RED);
+    tft.drawLine(centerX + 3, centerY + 4, centerX + 9, centerY - 4, TFT_RED);
+  } else {
+    // Draw unmuted speaker (speaker with sound waves)
+    // Speaker cone
+    tft.fillTriangle(centerX - 5, centerY - 4, centerX - 5, centerY + 4, centerX - 1, centerY + 2, TFT_WHITE);
+    tft.fillTriangle(centerX - 5, centerY - 4, centerX - 5, centerY + 4, centerX - 1, centerY - 2, TFT_WHITE);
+    // Speaker box
+    tft.fillRect(centerX - 8, centerY - 2, 3, 4, TFT_WHITE);
+    // Sound waves
+    tft.drawCircle(centerX + 2, centerY, 3, TFT_WHITE);
+    tft.drawCircle(centerX + 2, centerY, 5, TFT_WHITE);
+    tft.drawCircle(centerX + 2, centerY, 7, TFT_WHITE);
+  }
+  
   // Reset drawing flag
   isDrawing = false;
 }
@@ -1367,10 +1405,29 @@ void handleTouch() {
     Serial.print(" [PREV BUTTON]");
   } else if (isTouchInButton(x, y, btnConfig)) {
     Serial.print(" [CONFIG BUTTON]");
+  } else if (isTouchInButton(x, y, btnMute)) {
+    Serial.print(" [MUTE BUTTON]");
   } else {
     Serial.print(" [No button]");
   }
   Serial.println();
+  
+  // Check Mute button first
+  if (isTouchInButton(x, y, btnMute)) {
+    Serial.println("Mute button pressed");
+    isMuted = !isMuted;  // Toggle mute state
+    Serial.print("Mute is now: ");
+    Serial.println(isMuted ? "ON" : "OFF");
+    
+    // Play a brief beep to confirm (only if unmuting)
+    if (!isMuted) {
+      playButtonBeep();
+    }
+    
+    // Redraw the display to update the mute icon
+    drawTimerDisplay();
+    return;  // Exit to prevent other button processing
+  }
   
   // Check Config button (gear icon)
   if (isTouchInButton(x, y, btnConfig)) {
