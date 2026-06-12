@@ -8,15 +8,16 @@ A poker tournament blind timer for the ESP32-2432S028 "Cheap Yellow Display" (CY
 
 ## Features
 
-- 🎰 **25 Configurable Tournament Rounds** - Customize blinds, antes, and break periods
+- 🎮 **NEW: 3 Game Configurations** - Save and switch between 3 different tournament setups (see [Multi-Game Guide](MULTI_GAME_FEATURE.md))
+- 🎰 **25 Configurable Tournament Rounds** - Customize blinds, antes, and break periods per game
 - ⏱️ **Auto-Advancing Timer** - Automatically progresses through rounds
 - 📱 **Touchscreen Controls** - Start, pause, skip forward/back
 - 🔊 **Audio Alerts** - Buzzer beeps on button press and 5-second alert at round end
-- 🌐 **WiFi Configuration** - Web-based setup interface
+- 🌐 **WiFi Configuration** - Web-based setup interface with seamless multi-game editing
 - 💾 **Persistent Storage** - Settings and timer state saved to flash
-- 🔄 **Auto-Resume** - Continues from last position after power loss
+- 🔄 **Smart State Saving** - Only saves after START pressed, shows game selection when fresh
 - ⚙️ **Easy Config Mode** - Tap gear icon to configure
-- 🔗 **NEW: Multi-Device Sync** - Unlimited slave displays via ESPNow (see [Multi-Slave Guide](MULTI_SLAVE_QUICK_START.md))
+- 🔗 **Multi-Device Sync** - Unlimited slave displays via ESPNow (see [Multi-Slave Guide](MULTI_SLAVE_QUICK_START.md))
 
 ## Hardware Requirements
 
@@ -69,10 +70,17 @@ pio run --target upload
 
 ### 2. First Run
 
-The timer starts with default settings:
-- 25 rounds (15 minutes each)
+**On first boot or after pressing Fresh:**
+- **Game Selection Screen** appears
+- Choose from 3 configurable game slots
+- Each game has 25 rounds (15 minutes each default)
 - Breaks every 4th round
 - Blinds starting at 25/50, doubling progression
+
+**After selecting a game:**
+- Timer loads and is ready to start
+- Press START to begin countdown
+- State only saves after START is pressed (enables resume on next boot)
 
 ### 3. Configure Tournament (Optional)
 
@@ -88,7 +96,7 @@ The timer starts with default settings:
 ### 4. Using the Timer
 
 **Touch Controls:**
-- **START** (green) - Start the timer
+- **START** (green) - Start the timer (enables state saving)
 - **PAUSE** (red) - Pause the timer
 - **NEXT** (blue) - Skip to next round
 - **PREV** (orange) - Go to previous round
@@ -96,8 +104,17 @@ The timer starts with default settings:
 
 **Auto Features:**
 - Timer automatically advances when round finishes
-- Settings auto-save every 10 seconds
-- Timer state preserved on power loss
+- State auto-saves every 10 seconds (after START pressed)
+- Timer state preserved on power loss (if started)
+- Game selection shown on fresh boot (if never started)
+
+**Multi-Game Features:**
+- Configure 3 different tournament structures
+- Switch between games on startup or after Fresh
+- Each game has independent blinds, breaks, and settings
+- Custom names for easy identification
+
+📖 **See [Multi-Game Feature Guide](MULTI_GAME_FEATURE.md)** for detailed instructions
 
 ### 5. Multi-Device Synchronization (Optional)
 
@@ -297,6 +314,7 @@ Poker_Timer_CYD/
 ├── README.md                # This file
 ├── README_CYD.md            # Detailed CYD information
 ├── CONFIG_MODE_NEW.md       # Config mode documentation
+├── MULTI_GAME_FEATURE.md    # Multi-game feature documentation
 └── QUICK_START.md           # Quick start guide
 ```
 

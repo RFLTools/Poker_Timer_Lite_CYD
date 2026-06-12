@@ -19,6 +19,7 @@
 #include <nvs_flash.h>
 #include <esp_now.h>
 #include <esp_wifi.h>
+#include <ArduinoJson.h>
 
 // Touch screen configuration - CYD uses SEPARATE SPI bus for touch!
 #define TOUCH_CS 33
@@ -134,6 +135,11 @@ TouchButton btnConfig = {280, 5, 30, 30, "CFG", TFT_DARKGREY, TFT_WHITE};     //
 TouchButton btnMute = {280, 205, 30, 30, "MUT", TFT_DARKGREY, TFT_WHITE};     // Mute button bottom right
 TouchButton btnCancelConfig = {110, 185, 120, 50, "CANCEL", TFT_RED, TFT_WHITE}; // Cancel button for config mode
 
+// Game selection buttons (same layout as Pause/Next/Prev on left side)
+TouchButton btnGame1 = {10, 10, 70, 60, "1", TFT_GREEN, TFT_BLACK};   // Top left
+TouchButton btnGame2 = {10, 80, 70, 60, "2", TFT_BLUE, TFT_WHITE};    // Middle left
+TouchButton btnGame3 = {10, 150, 70, 60, "3", TFT_ORANGE, TFT_BLACK}; // Bottom left
+
 // Round structure
 struct Round {
   int duration;      // Duration in minutes
@@ -143,8 +149,23 @@ struct Round {
   bool isBreak;
 };
 
-// Tournament settings
+// Game configuration structure (holds rounds + title for one game)
+#define MAX_GAME_NAME_LENGTH 32
 #define MAX_ROUNDS 25
+#define NUM_GAME_SLOTS 3
+
+struct GameConfig {
+  char gameName[MAX_GAME_NAME_LENGTH];
+  Round rounds[MAX_ROUNDS];
+  int totalRounds;
+};
+
+// Multi-game configuration
+GameConfig gameConfigs[NUM_GAME_SLOTS];
+int selectedGameSlot = 0;  // Which game slot is currently selected (0-2)
+bool gameSelectionMode = false;  // Are we in game selection screen?
+
+// Tournament settings - active game
 Round rounds[MAX_ROUNDS];
 int totalRounds = MAX_ROUNDS;
 int currentRound = 0;
@@ -152,6 +173,7 @@ bool timerRunning = false;
 unsigned long roundStartTime = 0;
 int remainingSeconds = 0;
 int startingSeconds = 0; // Seconds at start of current timing session
+bool hasBeenStarted = false; // Track if START has been pressed (enables saving)
 
 // Web server
 AsyncWebServer server(80);
@@ -166,12 +188,17 @@ bool isMuted = false;
 
 // Function prototypes
 void initializeDefaultRounds();
+void initializeDefaultGame(int gameSlot, const char* defaultName);
+void loadGameIntoActive(int gameSlot);
+void saveActiveToGame(int gameSlot);
 void saveRoundsToPreferences();
 void loadRoundsFromPreferences();
 void saveTimerState();
 void loadTimerState();
 void clearTimerState();
 void startConfigMode();
+void showGameSelectionScreen();
+void drawGameSelectionScreen();
 void drawTimerDisplay();
 void drawButton(TouchButton &btn);
 void handleTouch();
@@ -230,6 +257,73 @@ void initializeDefaultRounds() {
   }
 }
 
+// Initialize a specific game slot with default rounds and name
+void initializeDefaultGame(int gameSlot, const char* defaultName) {
+  if (gameSlot < 0 || gameSlot >= NUM_GAME_SLOTS) return;
+  
+  // Set game name
+  strncpy(gameConfigs[gameSlot].gameName, defaultName, MAX_GAME_NAME_LENGTH - 1);
+  gameConfigs[gameSlot].gameName[MAX_GAME_NAME_LENGTH - 1] = '\0';
+  
+  // Set total rounds
+  gameConfigs[gameSlot].totalRounds = MAX_ROUNDS;
+  
+  // Initialize rounds with default blind structure
+  int blinds[] = {25, 50, 75, 100, 150, 200, 300, 400, 500, 600, 
+                  800, 1000, 1500, 2000, 3000, 4000, 5000, 6000, 
+                  8000, 10000, 12000, 15000, 20000, 25000, 30000};
+  
+  int roundIndex = 0;
+  for (int i = 0; i < MAX_ROUNDS; i++) {
+    if ((i + 1) % 4 == 0 && i > 0) {
+      gameConfigs[gameSlot].rounds[i].isBreak = true;
+      gameConfigs[gameSlot].rounds[i].duration = 15;
+      gameConfigs[gameSlot].rounds[i].smallBlind = 0;
+      gameConfigs[gameSlot].rounds[i].bigBlind = 0;
+      gameConfigs[gameSlot].rounds[i].ante = 0;
+    } else {
+      gameConfigs[gameSlot].rounds[i].isBreak = false;
+      gameConfigs[gameSlot].rounds[i].duration = 15;
+      gameConfigs[gameSlot].rounds[i].smallBlind = blinds[roundIndex];
+      gameConfigs[gameSlot].rounds[i].bigBlind = blinds[roundIndex] * 2;
+      gameConfigs[gameSlot].rounds[i].ante = 0;
+      roundIndex++;
+      if (roundIndex >= 25) roundIndex = 24;
+    }
+  }
+}
+
+// Load a game slot into the active game arrays
+void loadGameIntoActive(int gameSlot) {
+  if (gameSlot < 0 || gameSlot >= NUM_GAME_SLOTS) return;
+  
+  selectedGameSlot = gameSlot;
+  totalRounds = gameConfigs[gameSlot].totalRounds;
+  
+  for (int i = 0; i < MAX_ROUNDS; i++) {
+    rounds[i] = gameConfigs[gameSlot].rounds[i];
+  }
+  
+  Serial.print("Loaded game slot ");
+  Serial.print(gameSlot);
+  Serial.print(": ");
+  Serial.println(gameConfigs[gameSlot].gameName);
+}
+
+// Save the active game back to its slot
+void saveActiveToGame(int gameSlot) {
+  if (gameSlot < 0 || gameSlot >= NUM_GAME_SLOTS) return;
+  
+  gameConfigs[gameSlot].totalRounds = totalRounds;
+  
+  for (int i = 0; i < MAX_ROUNDS; i++) {
+    gameConfigs[gameSlot].rounds[i] = rounds[i];
+  }
+  
+  Serial.print("Saved active game to slot ");
+  Serial.println(gameSlot);
+}
+
 void saveRoundsToPreferences() {
   Serial.println("\n--- Saving to Preferences ---");
   
@@ -242,27 +336,67 @@ void saveRoundsToPreferences() {
   
   Serial.println("✓ Preferences opened for writing");
   
-  preferences.putInt("totalRounds", totalRounds);
+  // Clear all existing keys to prevent old data interference
+  Serial.println("Clearing existing game data...");
+  preferences.clear();
+  Serial.println("✓ Old data cleared");
+  
+  // Save device mode and selected game slot
   preferences.putInt("deviceMode", (int)deviceMode);
+  preferences.putInt("selectedGame", selectedGameSlot);
   Serial.print("✓ Device mode saved: ");
   Serial.println(deviceMode == MODE_MASTER ? "MASTER" : deviceMode == MODE_SLAVE ? "SLAVE" : "STANDALONE");
+  Serial.print("✓ Selected game slot: ");
+  Serial.println(selectedGameSlot);
   
-  for (int i = 0; i < totalRounds; i++) {
-    char key[20];
-    sprintf(key, "r%d_dur", i);
-    preferences.putInt(key, rounds[i].duration);
-    sprintf(key, "r%d_sb", i);
-    preferences.putInt(key, rounds[i].smallBlind);
-    sprintf(key, "r%d_bb", i);
-    preferences.putInt(key, rounds[i].bigBlind);
-    sprintf(key, "r%d_ante", i);
-    preferences.putInt(key, rounds[i].ante);
-    sprintf(key, "r%d_brk", i);
-    preferences.putBool(key, rounds[i].isBreak);
+  // Save all 3 game configurations
+  for (int slot = 0; slot < NUM_GAME_SLOTS; slot++) {
+    char key[32];
+    
+    // Save game name
+    sprintf(key, "g%d_name", slot);
+    preferences.putString(key, gameConfigs[slot].gameName);
+    
+    // Save total rounds for this game
+    sprintf(key, "g%d_total", slot);
+    preferences.putInt(key, gameConfigs[slot].totalRounds);
+    
+    // Save each round for this game
+    for (int i = 0; i < gameConfigs[slot].totalRounds; i++) {
+      sprintf(key, "g%d_r%d_dur", slot, i);
+      preferences.putInt(key, gameConfigs[slot].rounds[i].duration);
+      sprintf(key, "g%d_r%d_sb", slot, i);
+      preferences.putInt(key, gameConfigs[slot].rounds[i].smallBlind);
+      sprintf(key, "g%d_r%d_bb", slot, i);
+      preferences.putInt(key, gameConfigs[slot].rounds[i].bigBlind);
+      sprintf(key, "g%d_r%d_ante", slot, i);
+      preferences.putInt(key, gameConfigs[slot].rounds[i].ante);
+      sprintf(key, "g%d_r%d_brk", slot, i);
+      preferences.putBool(key, gameConfigs[slot].rounds[i].isBreak);
+    }
+    
+    Serial.print("✓ Game slot ");
+    Serial.print(slot);
+    Serial.print(" (");
+    Serial.print(gameConfigs[slot].totalRounds);
+    Serial.print(" rounds) saved: ");
+    Serial.println(gameConfigs[slot].gameName);
+    
+    // Debug first round
+    if (gameConfigs[slot].totalRounds > 0) {
+      Serial.print("  Round 1: dur=");
+      Serial.print(gameConfigs[slot].rounds[0].duration);
+      Serial.print(", SB=");
+      Serial.print(gameConfigs[slot].rounds[0].smallBlind);
+      Serial.print(", BB=");
+      Serial.print(gameConfigs[slot].rounds[0].bigBlind);
+      Serial.print(", break=");
+      Serial.println(gameConfigs[slot].rounds[0].isBreak ? "Y" : "N");
+    }
   }
   
   preferences.end();
-  Serial.println("✓ Rounds saved to preferences successfully");
+  Serial.println("✓ All games saved to preferences successfully");
   Serial.println("-----------------------------\n");
 }
 
@@ -271,7 +405,10 @@ void loadRoundsFromPreferences() {
   
   if (!nvsAvailable) {
     Serial.println("⚠ NVS not available, using defaults");
-    initializeDefaultRounds();
+    initializeDefaultGame(0, "Game 1");
+    initializeDefaultGame(1, "Game 2");
+    initializeDefaultGame(2, "Game 3");
+    loadGameIntoActive(0);
     deviceMode = MODE_STANDALONE;
     return;
   }
@@ -282,7 +419,10 @@ void loadRoundsFromPreferences() {
   if (!opened) {
     Serial.println("✗ Failed to open preferences (this is normal on first run)");
     Serial.println("Using default configuration");
-    initializeDefaultRounds();
+    initializeDefaultGame(0, "Game 1");
+    initializeDefaultGame(1, "Game 2");
+    initializeDefaultGame(2, "Game 3");
+    loadGameIntoActive(0);
     deviceMode = MODE_STANDALONE;
     preferences.end();
     return;
@@ -295,27 +435,100 @@ void loadRoundsFromPreferences() {
   Serial.print("✓ Device mode loaded: ");
   Serial.println(deviceMode == MODE_MASTER ? "MASTER" : deviceMode == MODE_SLAVE ? "SLAVE" : "STANDALONE");
   
-  if (preferences.isKey("totalRounds")) {
-    Serial.println("✓ Found saved configuration");
-    totalRounds = preferences.getInt("totalRounds", MAX_ROUNDS);
+  // Check if we have new multi-game format or old single-game format
+  if (preferences.isKey("g0_name")) {
+    // New multi-game format
+    Serial.println("✓ Found multi-game configuration");
     
-    for (int i = 0; i < totalRounds; i++) {
+    selectedGameSlot = preferences.getInt("selectedGame", 0);
+    
+    // Load all 3 game slots
+    for (int slot = 0; slot < NUM_GAME_SLOTS; slot++) {
+      char key[32];
+      
+      // Load game name
+      sprintf(key, "g%d_name", slot);
+      String gameName = preferences.getString(key, "DEFAULT");
+      Serial.print("  Reading key '");
+      Serial.print(key);
+      Serial.print("' = '");
+      Serial.print(gameName);
+      Serial.println("'");
+      
+      if (gameName.length() > 0 && gameName != "DEFAULT") {
+        strncpy(gameConfigs[slot].gameName, gameName.c_str(), MAX_GAME_NAME_LENGTH - 1);
+        gameConfigs[slot].gameName[MAX_GAME_NAME_LENGTH - 1] = '\0';
+      } else {
+        Serial.print("  WARNING: Game name not found, using default");
+        sprintf(gameConfigs[slot].gameName, "Game %d", slot + 1);
+      }
+      
+      // Load total rounds
+      sprintf(key, "g%d_total", slot);
+      gameConfigs[slot].totalRounds = preferences.getInt(key, MAX_ROUNDS);
+      
+      // Load rounds
+      for (int i = 0; i < gameConfigs[slot].totalRounds; i++) {
+        sprintf(key, "g%d_r%d_dur", slot, i);
+        gameConfigs[slot].rounds[i].duration = preferences.getInt(key, 15);
+        sprintf(key, "g%d_r%d_sb", slot, i);
+        gameConfigs[slot].rounds[i].smallBlind = preferences.getInt(key, 25);
+        sprintf(key, "g%d_r%d_bb", slot, i);
+        gameConfigs[slot].rounds[i].bigBlind = preferences.getInt(key, 50);
+        sprintf(key, "g%d_r%d_ante", slot, i);
+        gameConfigs[slot].rounds[i].ante = preferences.getInt(key, 0);
+        sprintf(key, "g%d_r%d_brk", slot, i);
+        gameConfigs[slot].rounds[i].isBreak = preferences.getBool(key, false);
+      }
+      
+      Serial.print("✓ Game slot ");
+      Serial.print(slot);
+      Serial.print(" loaded: ");
+      Serial.println(gameConfigs[slot].gameName);
+    }
+    
+    // Load selected game into active arrays
+    loadGameIntoActive(selectedGameSlot);
+    
+  } else if (preferences.isKey("totalRounds")) {
+    // Old single-game format - migrate to new format
+    Serial.println("✓ Found old single-game configuration, migrating...");
+    
+    // Load the old game data into slot 0
+    strcpy(gameConfigs[0].gameName, "Game 1");
+    gameConfigs[0].totalRounds = preferences.getInt("totalRounds", MAX_ROUNDS);
+    
+    for (int i = 0; i < gameConfigs[0].totalRounds; i++) {
       char key[20];
       sprintf(key, "r%d_dur", i);
-      rounds[i].duration = preferences.getInt(key, 15);
+      gameConfigs[0].rounds[i].duration = preferences.getInt(key, 15);
       sprintf(key, "r%d_sb", i);
-      rounds[i].smallBlind = preferences.getInt(key, 25);
+      gameConfigs[0].rounds[i].smallBlind = preferences.getInt(key, 25);
       sprintf(key, "r%d_bb", i);
-      rounds[i].bigBlind = preferences.getInt(key, 50);
+      gameConfigs[0].rounds[i].bigBlind = preferences.getInt(key, 50);
       sprintf(key, "r%d_ante", i);
-      rounds[i].ante = preferences.getInt(key, 0);
+      gameConfigs[0].rounds[i].ante = preferences.getInt(key, 0);
       sprintf(key, "r%d_brk", i);
-      rounds[i].isBreak = preferences.getBool(key, false);
+      gameConfigs[0].rounds[i].isBreak = preferences.getBool(key, false);
     }
-    Serial.println("✓ Rounds loaded from preferences");
+    
+    // Initialize slots 1 and 2 with defaults
+    initializeDefaultGame(1, "Game 2");
+    initializeDefaultGame(2, "Game 3");
+    
+    // Load game 0 into active
+    selectedGameSlot = 0;
+    loadGameIntoActive(0);
+    
+    Serial.println("✓ Migration complete");
+    
   } else {
+    // No saved configuration - use defaults
     Serial.println("No saved configuration found, using defaults");
-    initializeDefaultRounds();
+    initializeDefaultGame(0, "Game 1");
+    initializeDefaultGame(1, "Game 2");
+    initializeDefaultGame(2, "Game 3");
+    loadGameIntoActive(0);
   }
   
   preferences.end();
@@ -324,6 +537,11 @@ void loadRoundsFromPreferences() {
 
 void saveTimerState() {
   if (!nvsAvailable) return;
+  
+  // Only save if START has been pressed at least once
+  if (!hasBeenStarted) {
+    return;
+  }
   
   preferences.begin("poker-timer", false);
   preferences.putInt("state_round", currentRound);
@@ -395,6 +613,7 @@ void loadTimerState() {
           startingSeconds = savedSeconds;
           timerRunning = savedRunning;
           roundStartTime = millis();
+          hasBeenStarted = true; // Enable saving since we're resuming a started game
           chose = true;
           
           tft.fillScreen(TFT_BLACK);
@@ -407,19 +626,17 @@ void loadTimerState() {
         // Check Start Fresh button (right) - landscape coords
         else if (x >= 170 && x <= 260 && y >= 130 && y <= 180) {
           playButtonBeep();
-          // Start fresh
+          // Start fresh - show game selection screen
           clearTimerState();
+          chose = true;
+          
+          // Show game selection screen immediately
+          showGameSelectionScreen();
+          
+          // After selection, start fresh with selected game
           currentRound = 0;
           remainingSeconds = rounds[0].duration * 60;
           timerRunning = false;
-          chose = true;
-          
-          tft.fillScreen(TFT_BLACK);
-          tft.setTextSize(2);
-          tft.setCursor(70, 100);
-          tft.setTextColor(TFT_RED);
-          tft.println("Starting fresh...");
-          delay(1000);
         }
         
         // Wait for release
@@ -438,25 +655,132 @@ void loadTimerState() {
       startingSeconds = savedSeconds;
       timerRunning = savedRunning;
       roundStartTime = millis();
+      hasBeenStarted = true; // Enable saving since we're resuming a started game
     }
   } else {
     preferences.end();
-    // No saved state, start fresh
+    // No saved state - let user select which game to start
+    Serial.println("No saved state - showing game selection");
+    
+    showGameSelectionScreen();
+    
+    // After selection, start fresh with selected game
     currentRound = 0;
     remainingSeconds = rounds[0].duration * 60;
     timerRunning = false;
+    hasBeenStarted = false; // Reset flag - don't save until START pressed
   }
 }
 
 void clearTimerState() {
   if (!nvsAvailable) return;
   
+  Serial.println("Clearing saved timer state...");
   preferences.begin("poker-timer", false);
   preferences.remove("state_round");
   preferences.remove("state_seconds");
   preferences.remove("state_running");
   preferences.remove("state_time");
   preferences.end();
+  
+  // Reset the flag so saving won't happen until START is pressed again
+  hasBeenStarted = false;
+  
+  Serial.println("✓ Saved timer state cleared");
+}
+
+void drawGameSelectionScreen() {
+  tft.fillScreen(TFT_BLACK);
+  
+  // Draw 3 game buttons (same layout as Pause/Next/Prev)
+  drawButton(btnGame1);
+  drawButton(btnGame2);
+  drawButton(btnGame3);
+  
+  // Draw game names to the right of buttons
+  tft.setTextSize(2);
+  
+  // Game 1 name
+  tft.setTextColor(TFT_WHITE);
+  tft.setCursor(95, 25);
+  tft.println(gameConfigs[0].gameName);
+  
+  // Game 2 name
+  tft.setCursor(95, 95);
+  tft.println(gameConfigs[1].gameName);
+  
+  // Game 3 name
+  tft.setCursor(95, 165);
+  tft.println(gameConfigs[2].gameName);
+  
+  // Title at bottom center
+  tft.setTextSize(2);
+  tft.setTextColor(TFT_YELLOW);
+  tft.setCursor(100, 215);
+  tft.println("Select Game");
+}
+
+void showGameSelectionScreen() {
+  drawGameSelectionScreen();
+  
+  // Wait for user to select a game
+  bool selected = false;
+  while (!selected) {
+    if (ts.touched()) {
+      delay(50); // Debounce
+      TS_Point p = ts.getPoint();
+      int x = map(p.x, 200, 3700, 0, SCREEN_WIDTH);
+      int y = map(p.y, 240, 3800, 0, SCREEN_HEIGHT);
+      
+      // Check which game button was pressed
+      if (isTouchInButton(x, y, btnGame1)) {
+        playButtonBeep();
+        loadGameIntoActive(0);
+        selected = true;
+        
+        tft.fillScreen(TFT_BLACK);
+        tft.setTextSize(1);
+        tft.setTextColor(TFT_GREEN);
+        tft.setCursor(100, 110);
+        tft.print("Loading: ");
+        tft.println(gameConfigs[0].gameName);
+        delay(1000);
+      }
+      else if (isTouchInButton(x, y, btnGame2)) {
+        playButtonBeep();
+        loadGameIntoActive(1);
+        selected = true;
+        
+        tft.fillScreen(TFT_BLACK);
+        tft.setTextSize(1);
+        tft.setTextColor(TFT_GREEN);
+        tft.setCursor(100, 110);
+        tft.print("Loading: ");
+        tft.println(gameConfigs[1].gameName);
+        delay(1000);
+      }
+      else if (isTouchInButton(x, y, btnGame3)) {
+        playButtonBeep();
+        loadGameIntoActive(2);
+        selected = true;
+        
+        tft.fillScreen(TFT_BLACK);
+        tft.setTextSize(1);
+        tft.setTextColor(TFT_GREEN);
+        tft.setCursor(100, 110);
+        tft.print("Loading: ");
+        tft.println(gameConfigs[2].gameName);
+        delay(1000);
+      }
+      
+      // Wait for release
+      while (ts.touched()) {
+        delay(10);
+      }
+      delay(200);
+    }
+    delay(50);
+  }
 }
 
 String generateConfigHTML() {
@@ -660,25 +984,31 @@ String generateConfigHTML() {
     <h1>🎰 Poker Timer Config</h1>
     <form id="configForm">
       <div class="device-mode">
-        <h2>Device Sync Mode</h2>
-        <select name="deviceMode" id="deviceMode">
-          <option value="0")rawliteral";
-  
-  if (deviceMode == MODE_STANDALONE) html += " selected";
-  html += R"rawliteral(>Standalone (No Sync)</option>
-          <option value="1")rawliteral";
-  
-  if (deviceMode == MODE_MASTER) html += " selected";
-  html += R"rawliteral(>Master (Controls Others)</option>
-          <option value="2")rawliteral";
-  
-  if (deviceMode == MODE_SLAVE) html += " selected";
-  html += R"rawliteral(>Slave (Follows Master)</option>
-        </select>
-        <div class="mode-info" id="modeInfo">
-          Select device synchronization mode using ESPNow.
+        <h2>🎮 Game Configuration</h2>
+        <div style="display: flex; gap: 10px; align-items: center; margin-bottom: 15px;">
+          <label style="margin: 0;">
+            <input type="radio" name="gameSlot" value="0" onchange="switchGame()")rawliteral";
+  if (selectedGameSlot == 0) html += " checked";
+  html += R"rawliteral(> 1
+          </label>
+          <label style="margin: 0;">
+            <input type="radio" name="gameSlot" value="1" onchange="switchGame()")rawliteral";
+  if (selectedGameSlot == 1) html += " checked";
+  html += R"rawliteral(> 2
+          </label>
+          <label style="margin: 0;">
+            <input type="radio" name="gameSlot" value="2" onchange="switchGame()")rawliteral";
+  if (selectedGameSlot == 2) html += " checked";
+  html += R"rawliteral(> 3
+          </label>
         </div>
-       </div>
+        <div class="form-group">
+          <label>Game Name</label>
+          <input type="text" name="gameName" id="gameName" value=")rawliteral";
+  html += gameConfigs[selectedGameSlot].gameName;
+  html += R"rawliteral(" maxlength="31">
+        </div>
+      </div>
        
        <div class="import-export">
         <h2>💾 Import / Export Configuration</h2>
@@ -730,22 +1060,135 @@ String generateConfigHTML() {
     </form>
   </div>
   <script>
-    // Update mode info text when selection changes
-    const deviceModeSelect = document.getElementById('deviceMode');
-    const modeInfo = document.getElementById('modeInfo');
-    
-    const modeDescriptions = {
-      '0': 'Standalone mode - no synchronization. Device operates independently.',
-      '1': 'Master mode - controls the timer and broadcasts to all slave devices via ESPNow.',
-      '2': 'Slave mode - follows master device. All control commands sent to master.'
+    // Client-side storage for all 3 games (allows switching without losing changes)
+    // Pre-populate with server data for all 3 games
+    const gamesData = {
+      0: {
+        name: ')rawliteral";
+  html += gameConfigs[0].gameName;
+  html += R"rawliteral(',
+        rounds: )rawliteral";
+  
+  // Generate JSON for game 0 rounds
+  html += "[";
+  for (int i = 0; i < gameConfigs[0].totalRounds; i++) {
+    if (i > 0) html += ",";
+    html += "{duration:" + String(gameConfigs[0].rounds[i].duration);
+    html += ",smallBlind:" + String(gameConfigs[0].rounds[i].smallBlind);
+    html += ",bigBlind:" + String(gameConfigs[0].rounds[i].bigBlind);
+    html += ",ante:" + String(gameConfigs[0].rounds[i].ante);
+    html += ",isBreak:" + String(gameConfigs[0].rounds[i].isBreak ? "true" : "false");
+    html += "}";
+  }
+  html += "]";
+  
+  html += R"rawliteral(
+      },
+      1: {
+        name: ')rawliteral";
+  html += gameConfigs[1].gameName;
+  html += R"rawliteral(',
+        rounds: )rawliteral";
+  
+  // Generate JSON for game 1 rounds
+  html += "[";
+  for (int i = 0; i < gameConfigs[1].totalRounds; i++) {
+    if (i > 0) html += ",";
+    html += "{duration:" + String(gameConfigs[1].rounds[i].duration);
+    html += ",smallBlind:" + String(gameConfigs[1].rounds[i].smallBlind);
+    html += ",bigBlind:" + String(gameConfigs[1].rounds[i].bigBlind);
+    html += ",ante:" + String(gameConfigs[1].rounds[i].ante);
+    html += ",isBreak:" + String(gameConfigs[1].rounds[i].isBreak ? "true" : "false");
+    html += "}";
+  }
+  html += "]";
+  
+  html += R"rawliteral(
+      },
+      2: {
+        name: ')rawliteral";
+  html += gameConfigs[2].gameName;
+  html += R"rawliteral(',
+        rounds: )rawliteral";
+  
+  // Generate JSON for game 2 rounds
+  html += "[";
+  for (int i = 0; i < gameConfigs[2].totalRounds; i++) {
+    if (i > 0) html += ",";
+    html += "{duration:" + String(gameConfigs[2].rounds[i].duration);
+    html += ",smallBlind:" + String(gameConfigs[2].rounds[i].smallBlind);
+    html += ",bigBlind:" + String(gameConfigs[2].rounds[i].bigBlind);
+    html += ",ante:" + String(gameConfigs[2].rounds[i].ante);
+    html += ",isBreak:" + String(gameConfigs[2].rounds[i].isBreak ? "true" : "false");
+    html += "}";
+  }
+  html += "]";
+  
+  html += R"rawliteral(
+      }
     };
     
-    deviceModeSelect.addEventListener('change', (e) => {
-      modeInfo.textContent = modeDescriptions[e.target.value];
-    });
+    let currentGameSlot = )rawliteral";
+  html += String(selectedGameSlot);
+  html += R"rawliteral(;
     
-    // Set initial description
-    modeInfo.textContent = modeDescriptions[deviceModeSelect.value];
+    // Initialize games data from current form on page load
+    function loadInitialData() {
+      // All games are already pre-loaded from server
+      // Just update the current game if user has made changes
+      console.log('All games loaded:', gamesData);
+    }
+    
+    // Save current form data to memory
+    function saveCurrentGameToMemory() {
+      const slot = currentGameSlot;
+      gamesData[slot].name = document.getElementById('gameName').value;
+      gamesData[slot].rounds = [];
+      
+      for (let i = 0; i < 25; i++) {
+        gamesData[slot].rounds.push({
+          duration: parseInt(document.querySelector('[name="dur' + i + '"]').value),
+          smallBlind: parseInt(document.querySelector('[name="sb' + i + '"]').value),
+          bigBlind: parseInt(document.querySelector('[name="bb' + i + '"]').value),
+          ante: parseInt(document.querySelector('[name="ante' + i + '"]').value),
+          isBreak: document.querySelector('[name="brk' + i + '"]').checked
+        });
+      }
+    }
+    
+    // Load game data from memory into form
+    function loadGameFromMemory(slot) {
+      const game = gamesData[slot];
+      
+      document.getElementById('gameName').value = game.name;
+      
+      for (let i = 0; i < 25; i++) {
+        const round = game.rounds[i];
+        document.querySelector('[name="dur' + i + '"]').value = round.duration;
+        document.querySelector('[name="sb' + i + '"]').value = round.smallBlind;
+        document.querySelector('[name="bb' + i + '"]').value = round.bigBlind;
+        document.querySelector('[name="ante' + i + '"]').value = round.ante;
+        document.querySelector('[name="brk' + i + '"]').checked = round.isBreak;
+        toggleBreakStyle(i);
+      }
+    }
+    
+    // Switch between games (saves current, loads new from memory)
+    function switchGame() {
+      const newSlot = parseInt(document.querySelector('input[name="gameSlot"]:checked').value);
+      
+      if (newSlot === currentGameSlot) return;
+      
+      // Save current game to memory
+      saveCurrentGameToMemory();
+      
+      // Load new game from memory (all games pre-loaded, no page reload needed)
+      currentGameSlot = newSlot;
+      loadGameFromMemory(newSlot);
+    }
+    
+    // Initialize on page load
+    loadInitialData();
     
     // Toggle break style when checkbox changes
     function toggleBreakStyle(index) {
@@ -761,18 +1204,30 @@ String generateConfigHTML() {
     
     document.getElementById('configForm').onsubmit = async (e) => {
       e.preventDefault();
-      const formData = new FormData(e.target);
-      const data = {};
-      for (let [key, value] of formData.entries()) {
-        data[key] = value;
-      }
       
-      // Include unchecked checkboxes as false
-      const checkboxes = document.querySelectorAll('input[type="checkbox"]');
-      checkboxes.forEach(cb => {
-        if (!data[cb.name]) data[cb.name] = 'false';
-        else data[cb.name] = 'true';
-      });
+      // Save current game to memory first
+      saveCurrentGameToMemory();
+      
+      // Prepare data for all 3 games
+      const data = {
+        deviceMode: ')rawliteral";
+  html += String((int)deviceMode);
+  html += R"rawliteral(',
+        games: [
+          {
+            name: gamesData[0].name,
+            rounds: gamesData[0].rounds
+          },
+          {
+            name: gamesData[1].name,
+            rounds: gamesData[1].rounds
+          },
+          {
+            name: gamesData[2].name,
+            rounds: gamesData[2].rounds
+          }
+        ]
+      };
       
       const response = await fetch('/save', {
         method: 'POST',
@@ -793,27 +1248,32 @@ String generateConfigHTML() {
       }
     }
     
-    // Export configuration to JSON file
+    // Export configuration to JSON file (exports all 3 games)
     function exportConfig() {
-      const formData = new FormData(document.getElementById('configForm'));
-      const config = {
-        version: '1.0',
-        exportDate: new Date().toISOString(),
-        deviceMode: formData.get('deviceMode'),
-        rounds: []
-      };
+      // Save current game to memory first
+      saveCurrentGameToMemory();
       
-      // Collect all round data
-      for (let i = 0; i < 25; i++) {
-        const round = {
-          duration: parseInt(formData.get('dur' + i)),
-          smallBlind: parseInt(formData.get('sb' + i)),
-          bigBlind: parseInt(formData.get('bb' + i)),
-          ante: parseInt(formData.get('ante' + i)),
-          isBreak: formData.get('brk' + i) ? true : false
-        };
-        config.rounds.push(round);
-      }
+      const config = {
+        version: '3.0',
+        exportDate: new Date().toISOString(),
+        deviceMode: ')rawliteral";
+  html += String((int)deviceMode);
+  html += R"rawliteral(',
+        games: [
+          {
+            name: gamesData[0].name,
+            rounds: gamesData[0].rounds
+          },
+          {
+            name: gamesData[1].name,
+            rounds: gamesData[1].rounds
+          },
+          {
+            name: gamesData[2].name,
+            rounds: gamesData[2].rounds
+          }
+        ]
+      };
       
       // Create and download JSON file
       const json = JSON.stringify(config, null, 2);
@@ -821,16 +1281,16 @@ String generateConfigHTML() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = 'poker_timer_config_' + new Date().toISOString().split('T')[0] + '.json';
+      a.download = 'poker_3games_' + new Date().toISOString().split('T')[0] + '.json';
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
       
-      alert('Configuration exported successfully!');
+      alert('All 3 games exported successfully!');
     }
     
-    // Import configuration from JSON file
+    // Import configuration from JSON file (supports both old and new formats)
     function importConfig(event) {
       const file = event.target.files[0];
       if (!file) return;
@@ -840,29 +1300,48 @@ String generateConfigHTML() {
         try {
           const config = JSON.parse(e.target.result);
           
-          // Validate configuration
-          if (!config.rounds || !Array.isArray(config.rounds)) {
+          // Check if it's new multi-game format (version 3.0)
+          if (config.games && Array.isArray(config.games)) {
+            // Import all 3 games
+            for (let gameIdx = 0; gameIdx < 3 && gameIdx < config.games.length; gameIdx++) {
+              const game = config.games[gameIdx];
+              gamesData[gameIdx].name = game.name || 'Game ' + (gameIdx + 1);
+              gamesData[gameIdx].rounds = game.rounds || [];
+            }
+            
+            // Load first game into form
+            currentGameSlot = 0;
+            document.querySelector('input[name="gameSlot"][value="0"]').checked = true;
+            loadGameFromMemory(0);
+            
+            alert('All 3 games imported successfully! Review and click Save to apply.');
+          }
+          // Old single-game format (version 2.0 or older)
+          else if (config.rounds && Array.isArray(config.rounds)) {
+            // Import into current game slot only
+            if (config.gameName !== undefined) {
+              document.getElementById('gameName').value = config.gameName;
+            }
+            
+            config.rounds.forEach((round, i) => {
+              if (i < 25) {
+                document.querySelector('[name="dur' + i + '"]').value = round.duration || 15;
+                document.querySelector('[name="sb' + i + '"]').value = round.smallBlind || 0;
+                document.querySelector('[name="bb' + i + '"]').value = round.bigBlind || 0;
+                document.querySelector('[name="ante' + i + '"]').value = round.ante || 0;
+                document.querySelector('[name="brk' + i + '"]').checked = round.isBreak || false;
+                toggleBreakStyle(i);
+              }
+            });
+            
+            // Save to memory
+            saveCurrentGameToMemory();
+            
+            alert('Configuration imported to current game! Review and click Save to apply.');
+          }
+          else {
             throw new Error('Invalid configuration format');
           }
-          
-          // Apply configuration to form
-          if (config.deviceMode !== undefined) {
-            document.querySelector('[name="deviceMode"]').value = config.deviceMode;
-            document.getElementById('deviceMode').dispatchEvent(new Event('change'));
-          }
-          
-          config.rounds.forEach((round, i) => {
-            if (i < 25) {
-              document.querySelector('[name="dur' + i + '"]').value = round.duration || 15;
-              document.querySelector('[name="sb' + i + '"]').value = round.smallBlind || 0;
-              document.querySelector('[name="bb' + i + '"]').value = round.bigBlind || 0;
-              document.querySelector('[name="ante' + i + '"]').value = round.ante || 0;
-              document.querySelector('[name="brk' + i + '"]').checked = round.isBreak || false;
-              toggleBreakStyle(i); // Update visual styling
-            }
-          });
-          
-          alert('Configuration imported successfully! Review and click Save to apply.');
         } catch (err) {
           alert('Error importing configuration: ' + err.message);
         }
@@ -962,35 +1441,79 @@ void startConfigMode() {
   tft.setCursor(90, 80);
   tft.println("Starting AP...");
   
-  // Disconnect from any existing WiFi
-  WiFi.disconnect(true);
-  delay(100);
+  // De-initialize ESP-NOW if it was initialized
+  if (espNowInitialized) {
+    Serial.println("De-initializing ESP-NOW...");
+    esp_now_deinit();
+    espNowInitialized = false;
+    delay(200);
+  }
   
-  // Start Access Point
-  Serial.println("Setting WiFi mode to AP...");
-  WiFi.mode(WIFI_AP);
+  // Complete WiFi shutdown and cleanup
+  Serial.println("Shutting down WiFi...");
+  WiFi.disconnect(true);
+  WiFi.mode(WIFI_OFF);
   delay(500);
+  
+  // Initialize WiFi hardware by starting it in STA mode
+  Serial.println("Initializing WiFi hardware...");
+  WiFi.persistent(false);  // Don't save WiFi config to flash
+  WiFi.mode(WIFI_STA);
+  delay(100);
+  WiFi.begin();  // Start WiFi radio (no connection, just init hardware)
+  delay(500);
+  Serial.print("WiFi Status after init: ");
+  Serial.println(WiFi.status());
+  
+  // Now switch to AP mode
+  Serial.println("Switching to AP mode...");
+  WiFi.disconnect(true);
+  delay(200);
+  WiFi.mode(WIFI_AP);
+  delay(1000);
+  Serial.print("WiFi Mode: ");
+  Serial.println(WiFi.getMode());
   
   Serial.println("\n--- Attempting to start SoftAP ---");
   Serial.println("SSID: PokerTimer");
   
   bool apStarted = WiFi.softAP("PokerTimer", "", 1, 0, 4);
+  Serial.print("First attempt result: ");
+  Serial.println(apStarted ? "SUCCESS" : "FAILED");
   
   if (!apStarted) {
-    Serial.println("Attempt failed. Trying simpler config...");
-    delay(500);
+    Serial.println("Retrying with simpler config...");
     WiFi.softAPdisconnect(true);
     delay(500);
+    WiFi.mode(WIFI_OFF);
+    delay(500);
+    WiFi.mode(WIFI_AP);
+    delay(500);
     apStarted = WiFi.softAP("PokerTimer");
+    Serial.print("Second attempt result: ");
+    Serial.println(apStarted ? "SUCCESS" : "FAILED");
+  }
+  
+  if (!apStarted) {
+    Serial.println("Retrying with default channel...");
+    delay(500);
+    apStarted = WiFi.softAP("PokerTimer", "");
+    Serial.print("Third attempt result: ");
+    Serial.println(apStarted ? "SUCCESS" : "FAILED");
   }
   
   if (!apStarted) {
     Serial.println("✗ FAILED! All attempts failed!");
+    Serial.println("WiFi Status: " + String(WiFi.status()));
+    Serial.println("WiFi Mode: " + String(WiFi.getMode()));
     tft.fillScreen(TFT_BLACK);
     tft.setTextSize(2);
     tft.setCursor(90, 100);
     tft.setTextColor(TFT_RED);
     tft.println("AP FAILED!");
+    tft.setTextSize(1);
+    tft.setCursor(60, 130);
+    tft.println("Check Serial Monitor");
     while(true) { delay(1000); }
   }
   
@@ -1031,73 +1554,170 @@ void startConfigMode() {
   
   // Setup web server routes
   server.on("/", HTTP_GET, [](AsyncWebServerRequest *request){
+    // Check if game parameter is provided for switching
+    if (request->hasParam("game")) {
+      int gameSlot = request->getParam("game")->value().toInt();
+      if (gameSlot >= 0 && gameSlot < NUM_GAME_SLOTS) {
+        // Save current active game back to its slot
+        saveActiveToGame(selectedGameSlot);
+        // Load new game slot
+        loadGameIntoActive(gameSlot);
+      }
+    }
     request->send(200, "text/html", generateConfigHTML());
   });
   
   server.on("/save", HTTP_POST, [](AsyncWebServerRequest *request){}, NULL,
     [](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
-      String jsonData = "";
+      // Accumulate chunks into a static buffer
+      static String jsonData = "";
+      
+      // First chunk - reset buffer
+      if (index == 0) {
+        jsonData = "";
+        Serial.println("\n=== Receiving Config Data (chunked) ===");
+        Serial.print("Total size: ");
+        Serial.println(total);
+      }
+      
+      // Append this chunk
       for (size_t i = 0; i < len; i++) {
         jsonData += (char)data[i];
       }
       
-      Serial.println("Received config data:");
-      Serial.println(jsonData);
+      Serial.print("Chunk ");
+      Serial.print(index);
+      Serial.print("-");
+      Serial.print(index + len);
+      Serial.print(" / ");
+      Serial.println(total);
+      
+      // Not done yet - wait for more chunks
+      if (index + len < total) {
+        return;
+      }
+      
+      // All chunks received - now parse
+      Serial.println("\n=== Complete JSON Received ===");
+      Serial.print("Total length: ");
+      Serial.println(jsonData.length());
+      Serial.println("==============================\n");
+      
+      // Parse JSON using ArduinoJson
+      DynamicJsonDocument doc(12288);  // 12KB buffer for large configs
+      DeserializationError error = deserializeJson(doc, jsonData);
+      
+      if (error) {
+        Serial.print("JSON parse error: ");
+        Serial.println(error.c_str());
+        request->send(400, "text/plain", "JSON Parse Error");
+        return;
+      }
+      
+      Serial.println("✓ JSON parsed successfully!");
       
       // Parse device mode
-      String deviceModeKey = "\"deviceMode\":\"";
-      int deviceModeIdx = jsonData.indexOf(deviceModeKey);
-      if (deviceModeIdx >= 0) {
-        deviceModeIdx += deviceModeKey.length();
-        int modeValue = jsonData.substring(deviceModeIdx, jsonData.indexOf("\"", deviceModeIdx)).toInt();
-        deviceMode = (DeviceMode)modeValue;
+      if (doc.containsKey("deviceMode")) {
+        deviceMode = (DeviceMode)doc["deviceMode"].as<int>();
         Serial.print("Device mode set to: ");
         Serial.println(deviceMode == MODE_MASTER ? "MASTER" : deviceMode == MODE_SLAVE ? "SLAVE" : "STANDALONE");
       }
       
-      // Parse the form data
-      for (int i = 0; i < totalRounds; i++) {
-        String durKey = "\"dur" + String(i) + "\":\"";
-        String sbKey = "\"sb" + String(i) + "\":\"";
-        String bbKey = "\"bb" + String(i) + "\":\"";
-        String anteKey = "\"ante" + String(i) + "\":\"";
-        String brkKey = "\"brk" + String(i) + "\":\"";
+      // Parse all 3 games
+      if (doc.containsKey("games")) {
+        JsonArray games = doc["games"].as<JsonArray>();
+        int gameIdx = 0;
         
-        int durIdx = jsonData.indexOf(durKey);
-        if (durIdx >= 0) {
-          durIdx += durKey.length();
-          rounds[i].duration = jsonData.substring(durIdx, jsonData.indexOf("\"", durIdx)).toInt();
+        for (JsonObject game : games) {
+          if (gameIdx >= NUM_GAME_SLOTS) break;
+          
+          // Parse game name
+          const char* gameName = game["name"];
+          strncpy(gameConfigs[gameIdx].gameName, gameName, MAX_GAME_NAME_LENGTH - 1);
+          gameConfigs[gameIdx].gameName[MAX_GAME_NAME_LENGTH - 1] = '\0';
+          
+          Serial.print("Game ");
+          Serial.print(gameIdx);
+          Serial.print(" name: ");
+          Serial.println(gameConfigs[gameIdx].gameName);
+          
+          // Parse rounds
+          JsonArray rounds = game["rounds"].as<JsonArray>();
+          int roundIdx = 0;
+          
+          for (JsonObject round : rounds) {
+            if (roundIdx >= MAX_ROUNDS) break;
+            
+            gameConfigs[gameIdx].rounds[roundIdx].duration = round["duration"];
+            gameConfigs[gameIdx].rounds[roundIdx].smallBlind = round["smallBlind"];
+            gameConfigs[gameIdx].rounds[roundIdx].bigBlind = round["bigBlind"];
+            gameConfigs[gameIdx].rounds[roundIdx].ante = round["ante"];
+            gameConfigs[gameIdx].rounds[roundIdx].isBreak = round["isBreak"];
+            
+            roundIdx++;
+          }
+          
+          gameConfigs[gameIdx].totalRounds = roundIdx;
+          Serial.print("Game ");
+          Serial.print(gameIdx);
+          Serial.print(" - ");
+          Serial.print(roundIdx);
+          Serial.println(" rounds parsed");
+          
+          // Debug: Print first round details
+          if (roundIdx > 0) {
+            Serial.print("  Round 1: dur=");
+            Serial.print(gameConfigs[gameIdx].rounds[0].duration);
+            Serial.print(", SB=");
+            Serial.print(gameConfigs[gameIdx].rounds[0].smallBlind);
+            Serial.print(", BB=");
+            Serial.print(gameConfigs[gameIdx].rounds[0].bigBlind);
+            Serial.print(", ante=");
+            Serial.print(gameConfigs[gameIdx].rounds[0].ante);
+            Serial.print(", break=");
+            Serial.println(gameConfigs[gameIdx].rounds[0].isBreak ? "true" : "false");
+          }
+          
+          gameIdx++;
         }
         
-        int sbIdx = jsonData.indexOf(sbKey);
-        if (sbIdx >= 0) {
-          sbIdx += sbKey.length();
-          rounds[i].smallBlind = jsonData.substring(sbIdx, jsonData.indexOf("\"", sbIdx)).toInt();
-        }
-        
-        int bbIdx = jsonData.indexOf(bbKey);
-        if (bbIdx >= 0) {
-          bbIdx += bbKey.length();
-          rounds[i].bigBlind = jsonData.substring(bbIdx, jsonData.indexOf("\"", bbIdx)).toInt();
-        }
-        
-        int anteIdx = jsonData.indexOf(anteKey);
-        if (anteIdx >= 0) {
-          anteIdx += anteKey.length();
-          rounds[i].ante = jsonData.substring(anteIdx, jsonData.indexOf("\"", anteIdx)).toInt();
-        }
-        
-        int brkIdx = jsonData.indexOf(brkKey);
-        if (brkIdx >= 0) {
-          brkIdx += brkKey.length();
-          String brkVal = jsonData.substring(brkIdx, jsonData.indexOf("\"", brkIdx));
-          rounds[i].isBreak = (brkVal == "true");
-        }
+        Serial.print("Total games parsed: ");
+        Serial.println(gameIdx);
       }
       
+      // Load the currently selected game into active arrays
+      Serial.print("Loading game slot ");
+      Serial.print(selectedGameSlot);
+      Serial.println(" into active arrays...");
+      loadGameIntoActive(selectedGameSlot);
+      
+      // Save all game configs to preferences
+      Serial.println("\n### SAVING ALL GAMES TO NVS ###");
       saveRoundsToPreferences();
+      Serial.println("### SAVE COMPLETE ###\n");
+      
+      // Verify save by reading back first game name
+      preferences.begin("poker-timer", true);
+      String verifyName = preferences.getString("g0_name", "ERROR");
+      int verifyRounds = preferences.getInt("g0_total", -1);
+      preferences.end();
+      
+      Serial.print("VERIFY - Game 0 name: ");
+      Serial.println(verifyName);
+      Serial.print("VERIFY - Game 0 rounds: ");
+      Serial.println(verifyRounds);
+      
+      if (verifyName == "ERROR" || verifyRounds == -1) {
+        Serial.println("!!! WARNING: DATA MAY NOT HAVE SAVED CORRECTLY !!!");
+      }
+      
+      // Ensure NVS commit completes
+      delay(100);
+      
       playButtonBeep();
       request->send(200, "text/plain", "OK");
+      
+      Serial.println("Response sent to client");
       
       // If master, broadcast new config to all slaves before rebooting
       if (deviceMode == MODE_MASTER && espNowInitialized) {
@@ -1106,7 +1726,8 @@ void startConfigMode() {
         delay(1000);  // Give time for all messages to send
       }
       
-      delay(500);
+      Serial.println("Rebooting in 1 second...");
+      delay(1000);  // Give web server time to send response
       ESP.restart();
     }
   );
@@ -1634,6 +2255,7 @@ void handleTouch() {
       if (timerRunning) {
         startingSeconds = remainingSeconds;
         roundStartTime = millis();
+        hasBeenStarted = true; // Enable saving once START is pressed
         Serial.println("Timer started/resumed");
       } else {
         Serial.println("Timer paused");
