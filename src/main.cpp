@@ -556,6 +556,22 @@ void loadTimerState() {
   
   preferences.begin("poker-timer", true);
   
+  // SLAVE MODE: Skip resume/fresh/game selection screens, go straight to main screen
+  if (deviceMode == MODE_SLAVE) {
+    preferences.end();
+    Serial.println("SLAVE mode: Bypassing initial screens, loading default game");
+    
+    // Load the default game (Game 1) and start at round 0
+    loadGameIntoActive(0);
+    currentRound = 0;
+    remainingSeconds = rounds[0].duration * 60;
+    timerRunning = false;
+    hasBeenStarted = false;
+    
+    return; // Exit early, skip all the UI screens
+  }
+  
+  // STANDALONE/MASTER MODE: Show resume/fresh/game selection screens as normal
   if (preferences.isKey("state_round")) {
     int savedRound = preferences.getInt("state_round", 0);
     int savedSeconds = preferences.getInt("state_seconds", 0);
