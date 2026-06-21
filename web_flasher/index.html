@@ -377,21 +377,10 @@
             <div class="version-box">
                 <h3>📦 Firmware Build Date</h3>
                 <div class="version-info">
-                    <div class="version-item">
-                        <div class="version-label">Available Firmware</div>
-                        <div class="version-value" id="availableBuild">Loading...</div>
-                    </div>
-                    <div class="version-item">
-                        <div class="version-label">Your Device</div>
-                        <div class="version-value" id="deviceBuild">Not Connected</div>
+                    <div class="version-item" style="text-align: center;">
+                        <div class="version-value" id="availableBuild" style="font-size: 1.5em; color: var(--primary-color);">Loading...</div>
                     </div>
                 </div>
-                <p style="color: var(--text-muted); margin-top: 15px; font-size: 0.9em;">
-                    Connect your device and check its current build date
-                </p>
-                <button class="check-version-btn" id="checkVersionBtn" onclick="checkDeviceVersion()">
-                    Check Device Build Date
-                </button>
             </div>
 
             <div class="requirements">
@@ -512,21 +501,16 @@
     </div>
 
     <script>
-        // Convert "Jun 20 2026 14:23:45" to "2026-06-20"
-        function parseBuildDate(dateStr) {
-            const months = {
-                'Jan': '01', 'Feb': '02', 'Mar': '03', 'Apr': '04',
-                'May': '05', 'Jun': '06', 'Jul': '07', 'Aug': '08',
-                'Sep': '09', 'Oct': '10', 'Nov': '11', 'Dec': '12'
-            };
-            
-            const parts = dateStr.split(' ');
-            if (parts.length >= 3) {
-                const month = months[parts[0]] || '01';
-                const day = parts[1].trim().padStart(2, '0');
-                const year = parts[2];
-                return `${year}-${month}-${day}`;
+        // Load manifest build date on page load
+        async function loadManifestVersion() {
+            try {
+                const response = await fetch('./manifest.json');
+                const manifest = await response.json();
+                document.getElementById('availableBuild').textContent = manifest.build_date || 'Unknown';
+            } catch (err) {
+                console.error('Failed to load manifest:', err);
             }
+        }
             return dateStr;
         }
 
