@@ -1,6 +1,6 @@
 {
   "name": "Poker Timer CYD",
-  "version": "1.0.0",
+  "build_date": "2026-06-20",
   "home_assistant_domain": "esphome",
   "new_install_prompt_erase": true,
   "builds": [

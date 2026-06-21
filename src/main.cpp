@@ -21,6 +21,44 @@
 #include <esp_wifi.h>
 #include <ArduinoJson.h>
 
+// Firmware build information
+#ifndef BUILD_TIMESTAMP
+#define BUILD_TIMESTAMP __DATE__ " " __TIME__
+#endif
+
+const char* buildDate = BUILD_TIMESTAMP;
+
+// Convert __DATE__ "Jun 20 2026" to "YYYY-MM-DD" format
+String getBuildDateFormatted() {
+  String date = String(__DATE__);
+  String month = date.substring(0, 3);
+  String day = date.substring(4, 6);
+  String year = date.substring(7, 11);
+  
+  // Convert month name to number
+  int monthNum = 1;
+  if (month == "Jan") monthNum = 1;
+  else if (month == "Feb") monthNum = 2;
+  else if (month == "Mar") monthNum = 3;
+  else if (month == "Apr") monthNum = 4;
+  else if (month == "May") monthNum = 5;
+  else if (month == "Jun") monthNum = 6;
+  else if (month == "Jul") monthNum = 7;
+  else if (month == "Aug") monthNum = 8;
+  else if (month == "Sep") monthNum = 9;
+  else if (month == "Oct") monthNum = 10;
+  else if (month == "Nov") monthNum = 11;
+  else if (month == "Dec") monthNum = 12;
+  
+  // Remove leading space from day if present
+  day.trim();
+  if (day.length() == 1) day = "0" + day;
+  
+  // Format as YYYY-MM-DD
+  String monthStr = monthNum < 10 ? "0" + String(monthNum) : String(monthNum);
+  return year + "-" + monthStr + "-" + day;
+}
+
 // Touch screen configuration - CYD uses SEPARATE SPI bus for touch!
 #define TOUCH_CS 33
 #define TOUCH_IRQ 36
@@ -993,6 +1031,18 @@ String generateConfigHTML() {
     .btn-cancel:active {
       background: #da190b;
     }
+    .firmware-info {
+      text-align: center;
+      margin-top: 15px;
+      padding: 10px;
+      font-size: 11px;
+      color: #999;
+      border-top: 1px solid #e0e0e0;
+    }
+    .firmware-info .version {
+      font-weight: 600;
+      color: #667eea;
+    }
   </style>
 </head>
 <body>
@@ -1072,6 +1122,11 @@ String generateConfigHTML() {
     <div class="buttons">
       <button type="button" class="btn-cancel" onclick="cancel()">Cancel</button>
       <button type="submit" class="btn-save">Save</button>
+    </div>
+    <div class="firmware-info">
+      <div>Build Date: )rawliteral";
+  html += buildDate;
+  html += R"rawliteral(</div>
     </div>
     </form>
   </div>
@@ -1755,6 +1810,14 @@ void startConfigMode() {
     ESP.restart();
   });
   
+  // Firmware build date endpoint for web flasher
+  server.on("/version", HTTP_GET, [](AsyncWebServerRequest *request){
+    String json = "{";
+    json += "\"buildDate\":\"" + String(buildDate) + "\"";
+    json += "}";
+    request->send(200, "application/json", json);
+  });
+  
   server.begin();
   Serial.println("Web server started");
 }
@@ -2141,6 +2204,16 @@ void handleTouch() {
     tft.setTextColor(TFT_WHITE);
     tft.setCursor(195, 180);
     tft.println("NO");
+    
+    // Display build date at bottom center
+    tft.setTextSize(1);
+    tft.setTextColor(TFT_DARKGREY);
+    String buildInfo = "Build Date: ";
+    buildInfo += getBuildDateFormatted();
+    int textWidth = buildInfo.length() * 6; // Approximate width for text size 1
+    int xPos = (SCREEN_WIDTH - textWidth) / 2;
+    tft.setCursor(xPos, 228);
+    tft.println(buildInfo);
     
     // Wait for confirmation (10 second timeout)
     unsigned long confirmStart = millis();

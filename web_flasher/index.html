@@ -263,6 +263,74 @@
             display: block;
             border-radius: 8px;
         }
+
+        .version-box {
+            background: var(--bg-dark);
+            border-radius: 12px;
+            padding: 20px;
+            margin: 20px 0;
+            text-align: center;
+        }
+
+        .version-box h3 {
+            color: var(--text-light);
+            margin-bottom: 15px;
+            font-size: 1.2em;
+        }
+
+        .version-info {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+            margin-top: 15px;
+        }
+
+        .version-item {
+            background: rgba(33, 150, 243, 0.1);
+            padding: 15px;
+            border-radius: 8px;
+            border: 1px solid rgba(33, 150, 243, 0.2);
+        }
+
+        .version-label {
+            color: var(--text-muted);
+            font-size: 0.85em;
+            margin-bottom: 5px;
+        }
+
+        .version-value {
+            color: var(--text-light);
+            font-size: 1.1em;
+            font-weight: 600;
+        }
+
+        .check-version-btn {
+            background: var(--primary-color);
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            font-size: 0.95em;
+            font-weight: 600;
+            border-radius: 6px;
+            cursor: pointer;
+            margin-top: 10px;
+            transition: all 0.3s ease;
+        }
+
+        .check-version-btn:hover {
+            background: #1976D2;
+        }
+
+        .check-version-btn:disabled {
+            background: #666;
+            cursor: not-allowed;
+        }
+
+        @media (max-width: 600px) {
+            .version-info {
+                grid-template-columns: 1fr;
+            }
+        }
     </style>
 </head>
 <body>
@@ -304,6 +372,26 @@
                         <div class="feature-desc">Persistent storage & resume</div>
                     </div>
                 </div>
+            </div>
+
+            <div class="version-box">
+                <h3>📦 Firmware Build Date</h3>
+                <div class="version-info">
+                    <div class="version-item">
+                        <div class="version-label">Available Firmware</div>
+                        <div class="version-value" id="availableBuild">2026-06-20</div>
+                    </div>
+                    <div class="version-item">
+                        <div class="version-label">Your Device</div>
+                        <div class="version-value" id="deviceBuild">Not Connected</div>
+                    </div>
+                </div>
+                <p style="color: var(--text-muted); margin-top: 15px; font-size: 0.9em;">
+                    Connect your device and check its current build date
+                </p>
+                <button class="check-version-btn" id="checkVersionBtn" onclick="checkDeviceVersion()">
+                    Check Device Build Date
+                </button>
             </div>
 
             <div class="requirements">
@@ -424,11 +512,107 @@
     </div>
 
     <script>
+        // Convert "Jun 20 2026 14:23:45" to "2026-06-20"
+        function parseBuildDate(dateStr) {
+            const months = {
+                'Jan': '01', 'Feb': '02', 'Mar': '03', 'Apr': '04',
+                'May': '05', 'Jun': '06', 'Jul': '07', 'Aug': '08',
+                'Sep': '09', 'Oct': '10', 'Nov': '11', 'Dec': '12'
+            };
+            
+            const parts = dateStr.split(' ');
+            if (parts.length >= 3) {
+                const month = months[parts[0]] || '01';
+                const day = parts[1].padStart(2, '0');
+                const year = parts[2];
+                return `${year}-${month}-${day}`;
+            }
+            return dateStr;
+        }
+
+        // Load manifest build date on page load
+        async function loadManifestVersion() {
+            try {
+                const response = await fetch('./manifest.json');
+                const manifest = await response.json();
+                document.getElementById('availableBuild').textContent = manifest.build_date || 'Unknown';
+            } catch (err) {
+                console.error('Failed to load manifest:', err);
+            }
+        }
+
+        // Check device build date
+        async function checkDeviceVersion() {
+            const btn = document.getElementById('checkVersionBtn');
+            btn.disabled = true;
+            btn.textContent = 'Connecting...';
+
+            try {
+                // Request serial port
+                const port = await navigator.serial.requestPort();
+                await port.open({ baudRate: 115200 });
+
+                // Close port
+                await port.close();
+
+                // Try to connect via WiFi to get build date
+                // Prompt user for device IP
+                const deviceIP = prompt('Enter your device IP address (found on config screen):\n\nExample: 192.168.4.1', '192.168.4.1');
+                
+                if (!deviceIP) {
+                    btn.disabled = false;
+                    btn.textContent = 'Check Device Build Date';
+                    return;
+                }
+
+                btn.textContent = 'Fetching build date...';
+
+                // Fetch version from device
+                const response = await fetch(`http://${deviceIP}/version`, {
+                    mode: 'cors',
+                    headers: {
+                        'Accept': 'application/json'
+                    }
+                });
+
+                if (!response.ok) {
+                    throw new Error('Failed to fetch build date from device');
+                }
+
+                const versionData = await response.json();
+                const deviceBuildDate = parseBuildDate(versionData.buildDate);
+                document.getElementById('deviceBuild').textContent = deviceBuildDate;
+                
+                // Check if update is needed
+                const availableBuildDate = document.getElementById('availableBuild').textContent;
+                if (deviceBuildDate !== availableBuildDate) {
+                    alert('Different build detected!\n\nYour device: ' + deviceBuildDate + 
+                          '\nAvailable: ' + availableBuildDate);
+                } else {
+                    alert('Your device has the same build date: ' + deviceBuildDate);
+                }
+
+            } catch (err) {
+                console.error('Error checking build date:', err);
+                alert('Could not connect to device. Make sure:\n' +
+                      '1. Device is powered on\n' +
+                      '2. You are connected to the device WiFi (PokerTimer)\n' +
+                      '3. Device is in config mode (tap gear icon)');
+                document.getElementById('deviceBuild').textContent = 'Connection Failed';
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Check Device Build Date';
+            }
+        }
+
         // Add event listener for installation events
         document.querySelector('esp-web-install-button')
             .addEventListener('state-changed', (ev) => {
                 console.log('State changed:', ev.detail);
             });
+
+        // Load version on page load
+        window.addEventListener('DOMContentLoaded', loadManifestVersion);
     </script>
 </body>
 </html>
