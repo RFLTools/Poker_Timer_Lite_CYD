@@ -27,27 +27,27 @@ Write-Host "Copying firmware binaries..." -ForegroundColor Green
 if (Test-Path ".pio\build\esp32-2432s028\firmware.bin") {
     Copy-Item ".pio\build\esp32-2432s028\firmware.bin" "web_flasher\firmware.bin"
     $size = (Get-Item "web_flasher\firmware.bin").Length
-    Write-Host "  ✓ firmware.bin ($([math]::Round($size/1KB, 2)) KB)" -ForegroundColor White
+    Write-Host "  [OK] firmware.bin ($([math]::Round($size/1KB, 2)) KB)" -ForegroundColor White
 } else {
-    Write-Host "  ✗ firmware.bin not found!" -ForegroundColor Red
+    Write-Host "  [ERROR] firmware.bin not found!" -ForegroundColor Red
 }
 
 # Copy bootloader
 if (Test-Path ".pio\build\esp32-2432s028\bootloader.bin") {
     Copy-Item ".pio\build\esp32-2432s028\bootloader.bin" "web_flasher\bootloader.bin"
     $size = (Get-Item "web_flasher\bootloader.bin").Length
-    Write-Host "  ✓ bootloader.bin ($([math]::Round($size/1KB, 2)) KB)" -ForegroundColor White
+    Write-Host "  [OK] bootloader.bin ($([math]::Round($size/1KB, 2)) KB)" -ForegroundColor White
 } else {
-    Write-Host "  ✗ bootloader.bin not found!" -ForegroundColor Red
+    Write-Host "  [ERROR] bootloader.bin not found!" -ForegroundColor Red
 }
 
 # Copy partitions
 if (Test-Path ".pio\build\esp32-2432s028\partitions.bin") {
     Copy-Item ".pio\build\esp32-2432s028\partitions.bin" "web_flasher\partitions.bin"
     $size = (Get-Item "web_flasher\partitions.bin").Length
-    Write-Host "  ✓ partitions.bin ($([math]::Round($size/1KB, 2)) KB)" -ForegroundColor White
+    Write-Host "  [OK] partitions.bin ($([math]::Round($size/1KB, 2)) KB)" -ForegroundColor White
 } else {
-    Write-Host "  ✗ partitions.bin not found!" -ForegroundColor Red
+    Write-Host "  [ERROR] partitions.bin not found!" -ForegroundColor Red
 }
 
 # Look for boot_app0.bin in common locations
@@ -62,7 +62,7 @@ foreach ($location in $bootAppLocations) {
         Copy-Item $location "web_flasher\boot_app0.bin"
         $bootAppFound = $true
         $size = (Get-Item "web_flasher\boot_app0.bin").Length
-        Write-Host "  ✓ boot_app0.bin ($([math]::Round($size/1KB, 2)) KB)" -ForegroundColor White
+        Write-Host "  [OK] boot_app0.bin ($([math]::Round($size/1KB, 2)) KB)" -ForegroundColor White
         break
     }
 }
@@ -73,7 +73,23 @@ if (-not $bootAppFound) {
     $bootApp = New-Object byte[] 4096
     for ($i = 0; $i -lt 4096; $i++) { $bootApp[$i] = 0xFF }
     [System.IO.File]::WriteAllBytes("$PWD\web_flasher\boot_app0.bin", $bootApp)
-    Write-Host "  ✓ boot_app0.bin created (4.00 KB)" -ForegroundColor White
+    Write-Host "  [OK] boot_app0.bin created (4.00 KB)" -ForegroundColor White
+}
+
+# Update manifest.json with current build date
+Write-Host ""
+Write-Host "Updating manifest.json with build date..." -ForegroundColor Green
+
+$buildDate = Get-Date -Format "yyyy-MM-dd"
+$manifestPath = "web_flasher\manifest.json"
+
+if (Test-Path $manifestPath) {
+    $manifest = Get-Content $manifestPath -Raw | ConvertFrom-Json
+    $manifest.build_date = $buildDate
+    $manifest | ConvertTo-Json -Depth 10 | Set-Content $manifestPath
+    Write-Host "  [OK] Build date set to: $buildDate" -ForegroundColor White
+} else {
+    Write-Host "  [ERROR] manifest.json not found!" -ForegroundColor Red
 }
 
 Write-Host ""

@@ -72,6 +72,28 @@ if [ "$BOOT_APP_FOUND" = false ]; then
     echo "  ✓ boot_app0.bin created (4.0K)"
 fi
 
+# Update manifest.json with current build date
+echo ""
+echo "Updating manifest.json with build date..."
+
+BUILD_DATE=$(date +%Y-%m-%d)
+MANIFEST_PATH="web_flasher/manifest.json"
+
+if [ -f "$MANIFEST_PATH" ]; then
+    # Update the build_date field in the JSON file
+    python3 -c "
+import json
+with open('$MANIFEST_PATH', 'r') as f:
+    manifest = json.load(f)
+manifest['build_date'] = '$BUILD_DATE'
+with open('$MANIFEST_PATH', 'w') as f:
+    json.dump(manifest, f, indent=2)
+"
+    echo "  ✓ Build date set to: $BUILD_DATE"
+else
+    echo "  ✗ manifest.json not found!"
+fi
+
 echo ""
 echo "================================================"
 echo "Build complete! Files ready in web_flasher/"
