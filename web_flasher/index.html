@@ -523,7 +523,7 @@
             const parts = dateStr.split(' ');
             if (parts.length >= 3) {
                 const month = months[parts[0]] || '01';
-                const day = parts[1].padStart(2, '0');
+                const day = parts[1].trim().padStart(2, '0');
                 const year = parts[2];
                 return `${year}-${month}-${day}`;
             }
