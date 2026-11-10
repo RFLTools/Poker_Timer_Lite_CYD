@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Blind Configuration Instructions — Poker Timer</title>
+  <style>
+    /* === Reset & Base (matches main page) === */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #0f0f0f;
+      color: #e0ddd5;
+      line-height: 1.6;
+    }
+    .container { max-width: 1000px; margin: 0 auto; padding: 0 1.5rem; }
+    section { padding: 2.5rem 0; }
+
+    /* === Typography === */
+    h1 { font-size: 2.4rem; font-weight: 700; letter-spacing: -0.02em; }
+    h2 { font-size: 1.6rem; font-weight: 600; margin-bottom: 0.5rem; color: #f5f3ed; }
+    h3 { font-size: 1.1rem; font-weight: 600; color: #f5f3ed; margin-bottom: 0.4rem; }
+    p  { font-size: 0.98rem; color: #b5b0a6; }
+    .accent { color: #d4a853; }
+    .small { font-size: 0.85rem; color: #88847a; }
+
+    /* === Top bar === */
+    .topbar {
+      background: #141412;
+      border-bottom: 1px solid #2a2a26;
+      padding: 0.9rem 0;
+    }
+    .topbar-inner {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+    }
+    .topbar .brand { color: #f5f3ed; font-weight: 600; font-size: 1rem; text-decoration: none; }
+    .topbar .brand span { color: #d4a853; }
+    .topbar a.back { color: #d4a853; text-decoration: none; font-size: 0.9rem; }
+    .topbar a.back:hover { text-decoration: underline; }
+
+    /* === Hero === */
+    .hero {
+      padding: 2.5rem 0 1.5rem;
+      background: linear-gradient(180deg, #0f0f0f 0%, #1a1a18 100%);
+    }
+    .hero-tagline {
+      color: #d4a853; font-weight: 500; letter-spacing: 0.05em;
+      text-transform: uppercase; font-size: 0.8rem; margin-bottom: 0.5rem;
+    }
+
+    /* === Step cards === */
+    .step {
+      display: grid;
+      grid-template-columns: 300px 1fr;
+      gap: 1.5rem;
+      align-items: start;
+      background: #1b1b18;
+      border: 1px solid #2a2a26;
+      border-radius: 10px;
+      padding: 1.5rem;
+      margin-bottom: 1.25rem;
+    }
+    .step img {
+      width: 100%;
+      border-radius: 8px;
+      display: block;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+    }
+    .step .step-no {
+      display: inline-block;
+      background: #d4a853;
+      color: #0f0f0f;
+      font-weight: 700;
+      font-size: 0.8rem;
+      border-radius: 5px;
+      padding: 0.15rem 0.6rem;
+      margin-bottom: 0.5rem;
+    }
+    .step ul { list-style: none; margin-top: 0.4rem; }
+    .step ul li { padding: 0.25rem 0; padding-left: 1.3rem; position: relative; color: #c5c0b6; font-size: 0.95rem; }
+    .step ul li::before { content: "✦"; color: #d4a853; position: absolute; left: 0; }
+
+    /* === Config page screenshot === */
+    .config-shot {
+      text-align: center;
+      margin: 1.5rem 0;
+    }
+    .config-shot img {
+      max-width: 480px;
+      width: 100%;
+      border-radius: 10px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+    }
+
+    /* === Control reference === */
+    .controls-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1rem;
+      margin-top: 1rem;
+    }
+    .control-card {
+      background: #1b1b18;
+      border: 1px solid #2a2a26;
+      border-radius: 10px;
+      padding: 1.2rem 1.4rem;
+      display: flex;
+      gap: 1rem;
+      align-items: flex-start;
+    }
+    .control-card .letter {
+      flex-shrink: 0;
+      width: 2rem;
+      height: 2rem;
+      border-radius: 50%;
+      background: #d4a853;
+      color: #0f0f0f;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1rem;
+    }
+    .control-card h3 { font-size: 0.98rem; margin-bottom: 0.2rem; }
+    .control-card p { font-size: 0.88rem; }
+
+    /* === Section intro === */
+    .section-intro { max-width: 720px; margin-bottom: 1.5rem; }
+
+    /* === Footer === */
+    footer {
+      text-align: center;
+      padding: 2rem;
+      border-top: 1px solid #2a2a26;
+      color: #66635a;
+      font-size: 0.8rem;
+    }
+    footer a { color: #d4a853; text-decoration: none; }
+    footer a:hover { text-decoration: underline; }
+
+    /* === Responsive === */
+    @media (max-width: 768px) {
+      h1 { font-size: 1.8rem; }
+      h2 { font-size: 1.35rem; }
+      .step { grid-template-columns: 1fr; }
+      .step img { max-width: 340px; }
+      .controls-grid { grid-template-columns: 1fr; }
+      section { padding: 2rem 0; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ===== Top Bar ===== -->
+<div class="topbar">
+  <div class="container topbar-inner">
+    <a href="index.html" class="brand">♠️ Poker <span>Timer</span></a>
+    <a href="index.html" class="back">← Back to Home</a>
+  </div>
+</div>
+
+<!-- ===== Hero ===== -->
+<section class="hero">
+  <div class="container">
+    <div class="hero-tagline">Blind Configuration Instructions</div>
+    <h1>Setting Up Your <span class="accent">Blind Schedule</span></h1>
+    <p style="margin-top: 0.8rem; max-width: 680px;">The Poker Timer stores up to 3 games, each with up to 25 configurable rounds — blinds, antes, and breaks — with automatic level advancement. The schedule is set through a web page served by the device itself: no apps, no account, nothing to install.</p>
+  </div>
+</section>
+
+<!-- ===== Step 1: Connect ===== -->
+<section>
+  <div class="container">
+    <h2>Connect to the Device</h2>
+    <div class="step" style="margin-top: 1rem;">
+      <img src="images/instructions/01-Connect.jpg" alt="Connecting to the PokerTimer Wi-Fi network" loading="lazy">
+      <div>
+        <span class="step-no">STEP 1</span>
+        <h3>Join the PokerTimer Wi-Fi</h3>
+        <p>Put the timer in access-point mode (see Device Instructions, Step 5) and open your phone or laptop's Wi-Fi settings.</p>
+        <ul>
+          <li>Enable Wi-Fi and wait for the network to appear.</li>
+          <li>Select the network named <strong>PokerTimer</strong> and connect.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== Step 2: Browse ===== -->
+<section style="background: #141412;">
+  <div class="container">
+    <h2>Open the Configuration Page</h2>
+    <div class="step" style="margin-top: 1rem;">
+      <img src="images/instructions/02-Browse.jpg" alt="Browsing to http://192.168.4.1" loading="lazy">
+      <div>
+        <span class="step-no">STEP 2</span>
+        <h3>Browse to 192.168.4.1</h3>
+        <p>Open any web browser (Chrome, Safari, Firefox) and type the device address into the address bar:</p>
+        <ul>
+          <li>Go to <strong>http://192.168.4.1</strong></li>
+          <li>The configuration page loads — the browser may show a "Not secure" warning. That's normal for a device page on your own network; it's not going out over the internet.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== Step 3: Config page ===== -->
+<section>
+  <div class="container">
+    <h2>The Configuration Page</h2>
+    <p class="section-intro">The page has everything you need to build and manage your blind schedule. The letters below match the markers on the screenshot. Each game supports up to <strong>25 rounds</strong> — the screenshot shows the first four; scroll down the page to reach the rest.</p>
+
+    <div class="config-shot">
+      <img src="images/instructions/03_Config_Page_Detail.jpg" alt="Configuration page with labeled controls A through I" loading="lazy">
+      <p class="small" style="margin-top: 0.5rem;">Configuration page — the letters match the descriptions below.</p>
+    </div>
+
+    <div class="controls-grid">
+      <div class="control-card">
+        <div class="letter">A</div>
+        <div>
+          <h3>Select Game</h3>
+          <p>The device stores 3 games. Pick slot 1, 2, or 3 to edit that game.</p>
+        </div>
+      </div>
+      <div class="control-card">
+        <div class="letter">B</div>
+        <div>
+          <h3>Game Name</h3>
+          <p>Name the game. This is what appears on the power-on screen in Standalone and Master modes.</p>
+        </div>
+      </div>
+      <div class="control-card">
+        <div class="letter">C</div>
+        <div>
+          <h3>Export</h3>
+          <p>Saves the schedule to a JSON file. Handy when you need more than 3 games, or want to copy the same schedule onto multiple devices.</p>
+        </div>
+      </div>
+      <div class="control-card">
+        <div class="letter">D</div>
+        <div>
+          <h3>Import</h3>
+          <p>Loads a previously exported JSON file back into the device.</p>
+        </div>
+      </div>
+      <div class="control-card">
+        <div class="letter">E</div>
+        <div>
+          <h3>Reset</h3>
+          <p>Restores the factory default settings for the selected game.</p>
+        </div>
+      </div>
+      <div class="control-card">
+        <div class="letter">F</div>
+        <div>
+          <h3>Round Settings</h3>
+          <p>Enter the round <strong>Duration (min)</strong>, <strong>Small Blind</strong>, <strong>Big Blind</strong>, and <strong>Ante</strong> for each round.</p>
+        </div>
+      </div>
+      <div class="control-card">
+        <div class="letter">G</div>
+        <div>
+          <h3>Break</h3>
+          <p>Check this box to make a round a break instead of a play round.</p>
+        </div>
+      </div>
+      <div class="control-card">
+        <div class="letter">H</div>
+        <div>
+          <h3>Cancel</h3>
+          <p>Floats at the bottom of the screen, always visible while you scroll through the rounds. Reboots the device without saving any changes.</p>
+        </div>
+      </div>
+      <div class="control-card">
+        <div class="letter">I</div>
+        <div>
+          <h3>Save</h3>
+          <p>Floats at the bottom of the screen beside Cancel. Reboots the device with all changes saved.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== Step 4: Test ===== -->
+<section style="background: #141412;">
+  <div class="container">
+    <h2>Save &amp; Test</h2>
+    <div class="step" style="margin-top: 1rem;">
+      <div>
+        <span class="step-no">STEP 3</span>
+        <h3>Save Your Schedule</h3>
+        <p>When you're happy with the rounds, tap <strong>Save</strong>. The device reboots with the new schedule.</p>
+        <ul>
+          <li><strong>Cancel</strong> (H) reboots without saving — anything you changed is discarded.</li>
+          <li><strong>Save</strong> (I) reboots and applies the changes.</li>
+          <li>After the reboot, the game name appears on the Select Game screen in Standalone and Master modes.</li>
+          <li>Pick the game, tap START, and the timer levels the blinds automatically.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== Closing ===== -->
+<section>
+  <div class="container" style="text-align: center;">
+    <h2>Need a Hand with the Hardware?</h2>
+    <p style="max-width: 600px; margin: 0.5rem auto 1.5rem;">See the Device Instructions for powering on, changing modes, and putting the timer into access-point mode.</p>
+    <p style="margin-bottom: 0.5rem;"><a href="device-instructions.html" style="font-weight: 600; text-decoration: none;" class="accent">📱 Device Instructions</a></p>
+    <p><a href="index.html" class="accent" style="font-weight: 600; text-decoration: none;">← Back to Home</a></p>
+  </div>
+</section>
+
+<footer>
+  <div class="container">
+    <p>&copy; 2026 RFLTools &middot; Poker Timer &middot; Hand assembled on Vancouver Island, Canada</p>
+  </div>
+</footer>
+
+</body>
+</html>

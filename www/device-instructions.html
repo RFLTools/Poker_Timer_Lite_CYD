@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Device Instructions — Poker Timer</title>
+  <style>
+    /* === Reset & Base (matches main page) === */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #0f0f0f;
+      color: #e0ddd5;
+      line-height: 1.6;
+    }
+    .container { max-width: 1000px; margin: 0 auto; padding: 0 1.5rem; }
+    section { padding: 2.5rem 0; }
+
+    /* === Typography === */
+    h1 { font-size: 2.4rem; font-weight: 700; letter-spacing: -0.02em; }
+    h2 { font-size: 1.6rem; font-weight: 600; margin-bottom: 0.5rem; color: #f5f3ed; }
+    h3 { font-size: 1.1rem; font-weight: 600; color: #f5f3ed; margin-bottom: 0.4rem; }
+    p  { font-size: 0.98rem; color: #b5b0a6; }
+    .accent { color: #d4a853; }
+    .small { font-size: 0.85rem; color: #88847a; }
+
+    /* === Top bar === */
+    .topbar {
+      background: #141412;
+      border-bottom: 1px solid #2a2a26;
+      padding: 0.9rem 0;
+    }
+    .topbar-inner {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+    }
+    .topbar .brand { color: #f5f3ed; font-weight: 600; font-size: 1rem; text-decoration: none; }
+    .topbar .brand span { color: #d4a853; }
+    .topbar a.back { color: #d4a853; text-decoration: none; font-size: 0.9rem; }
+    .topbar a.back:hover { text-decoration: underline; }
+
+    /* === Hero === */
+    .hero {
+      padding: 2.5rem 0 1.5rem;
+      background: linear-gradient(180deg, #0f0f0f 0%, #1a1a18 100%);
+    }
+    .hero-tagline {
+      color: #d4a853; font-weight: 500; letter-spacing: 0.05em;
+      text-transform: uppercase; font-size: 0.8rem; margin-bottom: 0.5rem;
+    }
+
+    /* === Step cards === */
+    .step {
+      display: grid;
+      grid-template-columns: 300px 1fr;
+      gap: 1.5rem;
+      align-items: start;
+      background: #1b1b18;
+      border: 1px solid #2a2a26;
+      border-radius: 10px;
+      padding: 1.5rem;
+      margin-bottom: 1.25rem;
+    }
+    .step img {
+      width: 100%;
+      border-radius: 8px;
+      display: block;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+    }
+    .step .step-no {
+      display: inline-block;
+      background: #d4a853;
+      color: #0f0f0f;
+      font-weight: 700;
+      font-size: 0.8rem;
+      border-radius: 5px;
+      padding: 0.15rem 0.6rem;
+      margin-bottom: 0.5rem;
+    }
+    .step ul { list-style: none; margin-top: 0.4rem; }
+    .step ul li { padding: 0.25rem 0; padding-left: 1.3rem; position: relative; color: #c5c0b6; font-size: 0.95rem; }
+    .step ul li::before { content: "✦"; color: #d4a853; position: absolute; left: 0; }
+
+    /* === Hardware grid === */
+    .hw-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1.25rem;
+      margin-top: 1rem;
+    }
+    .hw-card {
+      background: #1b1b18;
+      border: 1px solid #2a2a26;
+      border-radius: 10px;
+      padding: 1rem;
+      text-align: center;
+    }
+    .hw-card img { width: 100%; border-radius: 8px; display: block; margin-bottom: 0.7rem; }
+    .hw-card h3 { font-size: 1rem; margin-bottom: 0.2rem; }
+    .hw-card p { font-size: 0.88rem; }
+
+    /* === Section intro === */
+    .section-intro { max-width: 720px; margin-bottom: 1.5rem; }
+
+    /* === Footer === */
+    footer {
+      text-align: center;
+      padding: 2rem;
+      border-top: 1px solid #2a2a26;
+      color: #66635a;
+      font-size: 0.8rem;
+    }
+    footer a { color: #d4a853; text-decoration: none; }
+    footer a:hover { text-decoration: underline; }
+
+    /* === Responsive === */
+    @media (max-width: 768px) {
+      h1 { font-size: 1.8rem; }
+      h2 { font-size: 1.35rem; }
+      .step { grid-template-columns: 1fr; }
+      .step img { max-width: 340px; }
+      .hw-grid { grid-template-columns: 1fr; }
+      section { padding: 2rem 0; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ===== Top Bar ===== -->
+<div class="topbar">
+  <div class="container topbar-inner">
+    <a href="index.html" class="brand">♠️ Poker <span>Timer</span></a>
+    <a href="index.html" class="back">← Back to Home</a>
+  </div>
+</div>
+
+<!-- ===== Hero ===== -->
+<section class="hero">
+  <div class="container">
+    <div class="hero-tagline">Device Instructions</div>
+    <h1>Getting Started with Your <span class="accent">Poker Timer</span></h1>
+    <p style="margin-top: 0.8rem; max-width: 680px;">Every unit is identical hardware — any device can run as a <strong>Standalone</strong> timer, a <strong>Master</strong> (controls the tournament), or a <strong>Slave</strong> (syncs to the master on another table). Here's what's on the device, how to power it on, and how to switch between modes.</p>
+  </div>
+</section>
+
+<!-- ===== Hardware Tour ===== -->
+<section>
+  <div class="container">
+    <h2>Meet Your Device</h2>
+    <p class="section-intro">The Poker Timer is a 2.8&Prime; touchscreen in a 3D-printed case. Four things are on the outside — everything else happens on the screen.</p>
+    <div class="hw-grid">
+      <div class="hw-card">
+        <img src="images/instructions/01_Power.jpg" alt="Power switch" loading="lazy">
+        <h3>Power Switch</h3>
+        <p>On the side of the case. Flip it to turn the device on and off.</p>
+      </div>
+      <div class="hw-card">
+        <img src="images/instructions/02_Speaker.jpg" alt="Speaker opening for the piezo buzzer" loading="lazy">
+        <h3>Speaker Opening</h3>
+        <p>Hole in the case that lets the built-in piezo buzzer sound through. The buzzer gives the 5-second countdown alert before each blind increase.</p>
+      </div>
+      <div class="hw-card">
+        <img src="images/instructions/03_Charge.jpg" alt="USB-C charge port" loading="lazy">
+        <h3>USB-C Charge Port</h3>
+        <p>On the back of the case. Charge the internal battery with any USB-C charger or battery bank.</p>
+      </div>
+      <div class="hw-card">
+        <img src="images/instructions/04_Firmware.jpg" alt="USB-C firmware port" loading="lazy">
+        <h3>USB-C Firmware Port</h3>
+        <p>Recessed port on the side panel. Used for firmware updates — a web flasher is available to do the work, no software to install.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== Power On ===== -->
+<section style="background: #141412;">
+  <div class="container">
+    <h2>Power On &amp; Game Selection</h2>
+    <div class="step" style="margin-top: 1rem;">
+      <img src="images/instructions/05_Game_Select.jpg" alt="Game selection screen" loading="lazy">
+      <div>
+        <span class="step-no">STEP 1</span>
+        <h3>Choose Your Game</h3>
+        <p>When the device powers on, the <strong>Select Game</strong> screen appears with the saved game options:</p>
+        <ul>
+          <li><strong>Standalone</strong> and <strong>Master</strong> modes are listed here for selection.</li>
+          <li>Units already set as <strong>Slaves</strong> skip this screen and go straight to the game screen.</li>
+          <li>Tap a game to load it. The countdown is ready to start.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== Main Game Screen ===== -->
+<section>
+  <div class="container">
+    <h2>The Main Game Screen</h2>
+    <div class="step" style="margin-top: 1rem;">
+      <img src="images/instructions/06_Mute.jpg" alt="Mute button on game screen" loading="lazy">
+      <div>
+        <span class="step-no">STEP 2</span>
+        <h3>Mute / Unmute</h3>
+        <p>The speaker icon in the bottom corner toggles the audio alerts. Tap it to silence the countdown beeps (handy mid-hand) and tap again to turn them back on.</p>
+      </div>
+    </div>
+    <div class="step">
+      <img src="images/instructions/07_Config.jpg" alt="Config button on game screen" loading="lazy">
+      <div>
+        <span class="step-no">STEP 3</span>
+        <h3>Open Configuration</h3>
+        <p>The gear icon in the top corner opens the <strong>Configuration</strong> screen. From there you can switch modes or enter access-point mode to change the blind schedule.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== Config Mode ===== -->
+<section style="background: #141412;">
+  <div class="container">
+    <h2>Configuration Mode</h2>
+    <p class="section-intro">Tap the gear icon on the main game screen. The timer will ask if you want to enter config mode. Press <strong>YES</strong> to continue or <strong>NO</strong> to go back to the game.</p>
+
+    <div class="step" style="margin-top: 1rem;">
+      <img src="images/instructions/12_Cancel_Config.jpg" alt="Cancel config prompt" loading="lazy">
+      <div>
+        <span class="step-no">STEP 4</span>
+        <h3>Enter Config Mode?</h3>
+        <p>Tap <strong>NO</strong> to cancel and return to the main game screen. Nothing changes until you confirm.</p>
+      </div>
+    </div>
+    <div class="step">
+      <img src="images/instructions/11_Access.jpg" alt="Access point confirmation" loading="lazy">
+      <div>
+        <span class="step-no">STEP 5</span>
+        <h3>Confirm Access Point</h3>
+        <p>Tap <strong>YES</strong> to enter configuration mode. The device starts its own Wi-Fi network so you can connect a phone, tablet, or laptop to set up the blind schedule.</p>
+      </div>
+    </div>
+
+    <h3 style="margin: 1.5rem 0 0.5rem;">Choosing a Mode</h3>
+    <p class="section-intro">While in config mode, tap one of the three mode tabs. The device reboots into the selected mode.</p>
+
+    <div class="step">
+      <img src="images/instructions/08_Standalone.jpg" alt="Standalone mode" loading="lazy">
+      <div>
+        <span class="step-no">STEP 6</span>
+        <h3>Standalone</h3>
+        <p>Runs the timer on its own, no syncing. Perfect for a single table. Tap <strong>Standalone</strong> and the device reboots into standalone mode.</p>
+      </div>
+    </div>
+    <div class="step">
+      <img src="images/instructions/09_Master.jpg" alt="Master mode" loading="lazy">
+      <div>
+        <span class="step-no">STEP 7</span>
+        <h3>Master</h3>
+        <p>The master controls the whole tournament — START, PAUSE, and skipping blinds. Other tables' units sync to it. Tap <strong>Master</strong> and the device reboots into master mode.</p>
+      </div>
+    </div>
+    <div class="step">
+      <img src="images/instructions/10_Slave.jpg" alt="Slave mode" loading="lazy">
+      <div>
+        <span class="step-no">STEP 8</span>
+        <h3>Slave</h3>
+        <p>Displays the same timer as the master and beeps in sync. Tap <strong>Slave</strong> and the device reboots into slave mode. Only one master per tournament — every other unit should be a slave.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== Access Point ===== -->
+<section>
+  <div class="container">
+    <h2>Access Point Mode (Wi-Fi Setup)</h2>
+    <p class="section-intro">When you confirmed access-point mode, the device creates its own Wi-Fi network. This is where you connect to configure the blind schedule.</p>
+
+    <div class="step" style="margin-top: 1rem;">
+      <img src="images/instructions/13_IP.jpg" alt="Access point SSID and address" loading="lazy">
+      <div>
+        <span class="step-no">STEP 9</span>
+        <h3>Connect to the Device</h3>
+        <p>The screen shows <strong>CONFIG MODE — WiFi AP Ready!</strong></p>
+        <ul>
+          <li>Wi-Fi SSID: <strong>PokerTimer</strong></li>
+          <li>On your phone or laptop, join that network.</li>
+          <li>Open a browser and go to <strong>http://192.168.4.1</strong></li>
+          <li>The configuration page opens — see the Blind Configuration Instructions for setting up rounds.</li>
+        </ul>
+      </div>
+    </div>
+    <div class="step">
+      <img src="images/instructions/14_Cancel_Access.jpg" alt="Cancel access point mode" loading="lazy">
+      <div>
+        <span class="step-no">STEP 10</span>
+        <h3>Cancel Access Point Mode</h3>
+        <p>Tap <strong>CANCEL</strong> on the device to leave access-point mode. The device reboots with no configuration changes — anything you didn't save is discarded.</p>
+      </div>
+    </div>
+    <div class="step">
+      <img src="images/instructions/15_Confirm_Cancel_Access.jpg" alt="Confirm cancel access point" loading="lazy">
+      <div>
+        <span class="step-no">STEP 11</span>
+        <h3>Confirm Cancelling</h3>
+        <p>Tap <strong>YES</strong> to confirm you want to exit config mode, or <strong>NO</strong> to stay in access-point mode.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== Slave Mode ===== -->
+<section style="background: #141412;">
+  <div class="container">
+    <h2>Slave Mode</h2>
+    <p class="section-intro">A slave device displays the master's timer. The master controls the game — a slave's START button doesn't pause or start anything.</p>
+
+    <div class="step" style="margin-top: 1rem;">
+      <img src="images/instructions/17_Slave_Config_Enable.jpg" alt="Slave screen with config button" loading="lazy">
+      <div>
+        <span class="step-no">STEP 12</span>
+        <h3>Open Configuration</h3>
+        <p>On the slave's game screen, press the button to reveal the configuration icon (top corner). This button does not pause or start the game — that's controlled by the master.</p>
+      </div>
+    </div>
+    <div class="step">
+      <img src="images/instructions/18_Slave_Config.jpg" alt="Slave config screen" loading="lazy">
+      <div>
+        <span class="step-no">STEP 13</span>
+        <h3>Slave Configuration</h3>
+        <p>The slave's configuration screen is the same as the master's (same options as STEP 4&ndash;8). From here you can change the slave's mode or enter access-point mode.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== Closing ===== -->
+<section>
+  <div class="container" style="text-align: center;">
+    <h2>That's It — Deal the Cards</h2>
+    <p style="max-width: 600px; margin: 0.5rem auto 1.5rem;">Power on, pick your game, and tap START. The timer levels the blinds automatically and sounds the countdown before each increase. For multi-table games, set one unit as master and the rest as slaves.</p>
+    <h2 style="font-size: 1.3rem; margin-top: 2rem;">Need a Hand with the WiFi?</h2>
+    <p style="max-width: 600px; margin: 0.5rem auto 1.5rem;">Put the timer in access-point mode and connect to it to set up your blind schedule.</p>
+    <p style="margin-bottom: 0.5rem;"><a href="blind-config.html" style="font-weight: 600; text-decoration: none;" class="accent">⚙️ Blind Configuration</a></p>
+    <p><a href="index.html" class="accent" style="font-weight: 600; text-decoration: none;">← Back to Home</a></p>
+  </div>
+</section>
+
+<footer>
+  <div class="container">
+    <p>&copy; 2026 RFLTools &middot; Poker Timer &middot; Hand assembled on Vancouver Island, Canada</p>
+  </div>
+</footer>
+
+</body>
+</html>
